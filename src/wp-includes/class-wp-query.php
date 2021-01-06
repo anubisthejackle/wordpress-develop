@@ -2160,22 +2160,16 @@ class WP_Query {
 
 		$this->apply_pagination_filters($where, $join);
 
-		// Paging.
-		if ( empty( $q['nopaging'] ) && ! $this->is_singular ) {
-			$page = absint( $q['paged'] );
+		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
+
+			$page = absint( $this->query_vars['paged'] );
 			if ( ! $page ) {
 				$page = 1;
 			}
 
-			// If 'offset' is provided, it takes precedence over 'paged'.
-			if ( isset( $q['offset'] ) && is_numeric( $q['offset'] ) ) {
-				$q['offset'] = absint( $q['offset'] );
-				$pgstrt      = $q['offset'] . ', ';
-			} else {
-				$pgstrt = absint( ( $page - 1 ) * $q['posts_per_page'] ) . ', ';
-			}
-			$limits = 'LIMIT ' . $pgstrt . $q['posts_per_page'];
 		}
+
+		$limits = $this->build_limits_for_get_posts($page);
 
 		// Comments feeds.
 		if ( $this->is_comment_feed && ! $this->is_singular ) {
@@ -2410,6 +2404,20 @@ class WP_Query {
 		$this->handle_lazy_loading();
 
 		return $this->posts;
+	}
+
+	public function build_limits_for_get_posts($page) {
+		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
+
+			// If 'offset' is provided, it takes precedence over 'paged'.
+			if ( isset( $this->query_vars['offset'] ) && is_numeric( $this->query_vars['offset'] ) ) {
+				$this->query_vars['offset'] = absint( $this->query_vars['offset'] );
+				$pgstrt      = $this->query_vars['offset'] . ', ';
+			} else {
+				$pgstrt = absint( ( $page - 1 ) * $this->query_vars['posts_per_page'] ) . ', ';
+			}
+			return 'LIMIT ' . $pgstrt . $this->query_vars['posts_per_page'];
+		}
 	}
 
 	public function build_orderby_for_get_posts() {
