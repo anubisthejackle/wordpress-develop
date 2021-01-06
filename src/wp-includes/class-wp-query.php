@@ -2373,9 +2373,8 @@ class WP_Query {
 		if ( ! empty( $groupby ) ) {
 			$groupby = 'GROUP BY ' . $groupby;
 		}
-		if ( ! empty( $orderby ) ) {
-			$orderby = 'ORDER BY ' . $orderby;
-		}
+
+		$orderby = $this->build_orderby_for_get_posts($orderby);
 
 		$found_rows = '';
 		if ( ! $q['no_found_rows'] && ! empty( $limits ) ) {
@@ -2499,6 +2498,14 @@ class WP_Query {
 		$this->handle_lazy_loading();
 
 		return $this->posts;
+	}
+
+	public function build_orderby_for_get_posts($orderby) {
+		if ( ! empty( $orderby ) ) {
+			$orderby = 'ORDER BY ' . $orderby;
+		}
+
+		return $orderby;
 	}
 
 	public function build_post_type_object($post_type){
