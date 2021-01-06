@@ -1969,61 +1969,6 @@ class WP_Query {
 			unset( $ptype_obj );
 		}
 
-		// Parameters related to 'post_name'.
-		if ( '' !== $q['name'] ) {
-			$q['name'] = sanitize_title_for_query( $q['name'] );
-			$where    .= " AND {$wpdb->posts}.post_name = '" . $q['name'] . "'";
-		} elseif ( '' !== $q['pagename'] ) {
-			if ( isset( $this->queried_object_id ) ) {
-				$reqpage = $this->queried_object_id;
-			} else {
-				if ( 'page' !== $q['post_type'] ) {
-					foreach ( (array) $q['post_type'] as $_post_type ) {
-						$ptype_obj = get_post_type_object( $_post_type );
-						if ( ! $ptype_obj || ! $ptype_obj->hierarchical ) {
-							continue;
-						}
-
-						$reqpage = get_page_by_path( $q['pagename'], OBJECT, $_post_type );
-						if ( $reqpage ) {
-							break;
-						}
-					}
-					unset( $ptype_obj );
-				} else {
-					$reqpage = get_page_by_path( $q['pagename'] );
-				}
-				if ( ! empty( $reqpage ) ) {
-					$reqpage = $reqpage->ID;
-				} else {
-					$reqpage = 0;
-				}
-			}
-
-			$page_for_posts = get_option( 'page_for_posts' );
-			if ( ( 'page' !== get_option( 'show_on_front' ) ) || empty( $page_for_posts ) || ( $reqpage != $page_for_posts ) ) {
-				$q['pagename'] = sanitize_title_for_query( wp_basename( $q['pagename'] ) );
-				$q['name']     = $q['pagename'];
-				$where        .= " AND ({$wpdb->posts}.ID = '$reqpage')";
-				$reqpage_obj   = get_post( $reqpage );
-				if ( is_object( $reqpage_obj ) && 'attachment' === $reqpage_obj->post_type ) {
-					$this->is_attachment = true;
-					$post_type           = 'attachment';
-					$q['post_type']      = 'attachment';
-					$this->is_page       = true;
-					$q['attachment_id']  = $reqpage;
-				}
-			}
-		} elseif ( '' !== $q['attachment'] ) {
-			$q['attachment'] = sanitize_title_for_query( wp_basename( $q['attachment'] ) );
-			$q['name']       = $q['attachment'];
-			$where          .= " AND {$wpdb->posts}.post_name = '" . $q['attachment'] . "'";
-		} elseif ( is_array( $q['post_name__in'] ) && ! empty( $q['post_name__in'] ) ) {
-			$q['post_name__in'] = array_map( 'sanitize_title_for_query', $q['post_name__in'] );
-			$post_name__in      = "'" . implode( "','", $q['post_name__in'] ) . "'";
-			$where             .= " AND {$wpdb->posts}.post_name IN ($post_name__in)";
-		}
-
 		// If an attachment is requested by number, let it supersede any post number.
 		if ( $q['attachment_id'] ) {
 			$q['p'] = absint( $q['attachment_id'] );
@@ -2591,6 +2536,61 @@ class WP_Query {
 
 	public function build_where_for_get_posts($where, $post_type, $post_status_join, &$join){
 		global $wpdb;
+
+		// Parameters related to 'post_name'.
+		if ( '' !== $this->query_vars['name'] ) {
+			$this->query_vars['name'] = sanitize_title_for_query( $this->query_vars['name'] );
+			$where    .= " AND {$wpdb->posts}.post_name = '" . $this->query_vars['name'] . "'";
+		} elseif ( '' !== $this->query_vars['pagename'] ) {
+			if ( isset( $this->queried_object_id ) ) {
+				$reqpage = $this->queried_object_id;
+			} else {
+				if ( 'page' !== $this->query_vars['post_type'] ) {
+					foreach ( (array) $this->query_vars['post_type'] as $_post_type ) {
+						$ptype_obj = get_post_type_object( $_post_type );
+						if ( ! $ptype_obj || ! $ptype_obj->hierarchical ) {
+							continue;
+						}
+
+						$reqpage = get_page_by_path( $this->query_vars['pagename'], OBJECT, $_post_type );
+						if ( $reqpage ) {
+							break;
+						}
+					}
+					unset( $ptype_obj );
+				} else {
+					$reqpage = get_page_by_path( $this->query_vars['pagename'] );
+				}
+				if ( ! empty( $reqpage ) ) {
+					$reqpage = $reqpage->ID;
+				} else {
+					$reqpage = 0;
+				}
+			}
+
+			$page_for_posts = get_option( 'page_for_posts' );
+			if ( ( 'page' !== get_option( 'show_on_front' ) ) || empty( $page_for_posts ) || ( $reqpage != $page_for_posts ) ) {
+				$this->query_vars['pagename'] = sanitize_title_for_query( wp_basename( $this->query_vars['pagename'] ) );
+				$this->query_vars['name']     = $this->query_vars['pagename'];
+				$where        .= " AND ({$wpdb->posts}.ID = '$reqpage')";
+				$reqpage_obj   = get_post( $reqpage );
+				if ( is_object( $reqpage_obj ) && 'attachment' === $reqpage_obj->post_type ) {
+					$this->is_attachment = true;
+					$post_type           = 'attachment';
+					$this->query_vars['post_type']      = 'attachment';
+					$this->is_page       = true;
+					$this->query_vars['attachment_id']  = $reqpage;
+				}
+			}
+		} elseif ( '' !== $this->query_vars['attachment'] ) {
+			$this->query_vars['attachment'] = sanitize_title_for_query( wp_basename( $this->query_vars['attachment'] ) );
+			$this->query_vars['name']       = $this->query_vars['attachment'];
+			$where          .= " AND {$wpdb->posts}.post_name = '" . $this->query_vars['attachment'] . "'";
+		} elseif ( is_array( $this->query_vars['post_name__in'] ) && ! empty( $this->query_vars['post_name__in'] ) ) {
+			$this->query_vars['post_name__in'] = array_map( 'sanitize_title_for_query', $this->query_vars['post_name__in'] );
+			$post_name__in      = "'" . implode( "','", $this->query_vars['post_name__in'] ) . "'";
+			$where             .= " AND {$wpdb->posts}.post_name IN ($post_name__in)";
+		}
 
 		if ( '' !== $this->query_vars['title'] ) {
 			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_title = %s", stripslashes( $this->query_vars['title'] ) );
