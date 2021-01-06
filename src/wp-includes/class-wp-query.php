@@ -1931,12 +1931,9 @@ class WP_Query {
 
 		// First let's clear some variables.
 		$distinct         = '';
-		$whichauthor      = '';
-		$whichmimetype    = '';
 		$where            = '';
 		$limits           = '';
 		$join             = '';
-		$search           = '';
 		$groupby          = '';
 		$post_status_join = false;
 		$page             = 1;
@@ -1972,23 +1969,6 @@ class WP_Query {
 		// If an attachment is requested by number, let it supersede any post number.
 		if ( $q['attachment_id'] ) {
 			$q['p'] = absint( $q['attachment_id'] );
-		}
-
-		// If a search pattern is specified, load the posts that match.
-		if ( strlen( $q['s'] ) ) {
-			$search = $this->parse_search( $q );
-		}
-
-		if ( ! $q['suppress_filters'] ) {
-			/**
-			 * Filters the search SQL that is used in the WHERE clause of WP_Query.
-			 *
-			 * @since 3.0.0
-			 *
-			 * @param string   $search Search SQL for WHERE clause.
-			 * @param WP_Query $this   The current WP_Query object.
-			 */
-			$search = apply_filters_ref_array( 'posts_search', array( $search, &$this ) );
 		}
 
 		// Taxonomies.
@@ -2096,25 +2076,6 @@ class WP_Query {
 			$q['author'] = implode( ',', $authors );
 		}
 
-		// Author stuff for nice URLs.
-
-		if ( '' !== $q['author_name'] ) {
-			if ( strpos( $q['author_name'], '/' ) !== false ) {
-				$q['author_name'] = explode( '/', $q['author_name'] );
-				if ( $q['author_name'][ count( $q['author_name'] ) - 1 ] ) {
-					$q['author_name'] = $q['author_name'][ count( $q['author_name'] ) - 1 ]; // No trailing slash.
-				} else {
-					$q['author_name'] = $q['author_name'][ count( $q['author_name'] ) - 2 ]; // There was a trailing slash.
-				}
-			}
-			$q['author_name'] = sanitize_title_for_query( $q['author_name'] );
-			$q['author']      = get_user_by( 'slug', $q['author_name'] );
-			if ( $q['author'] ) {
-				$q['author'] = $q['author']->ID;
-			}
-			$whichauthor .= " AND ({$wpdb->posts}.post_author = " . absint( $q['author'] ) . ')';
-		}
-
 		// Matching by comment count.
 		if ( isset( $q['comment_count'] ) ) {
 			// Numeric comment count is converted to array format.
@@ -2141,13 +2102,6 @@ class WP_Query {
 				$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_count {$q['comment_count']['compare']} %d", $q['comment_count']['value'] );
 			}
 		}
-
-		// MIME-Type stuff for attachment browsing.
-
-		if ( isset( $q['post_mime_type'] ) && '' !== $q['post_mime_type'] ) {
-			$whichmimetype = wp_post_mime_type_where( $q['post_mime_type'], $wpdb->posts );
-		}
-		$where .= $search . $whichauthor . $whichmimetype;
 
 		if ( ! empty( $this->meta_query->queries ) ) {
 			$clauses = $this->meta_query->get_sql( 'post', $wpdb->posts, 'ID', $this );
@@ -2545,6 +2499,54 @@ class WP_Query {
 
 	public function build_where_for_get_posts($where, $post_type, $post_status_join, &$join){
 		global $wpdb;
+
+		$search = '';
+		$whichauthor = '';
+		$whichmimetype = '';
+
+		// If a search pattern is specified, load the posts that match.
+		if ( strlen( $this->query_vars['s'] ) ) {
+			$search = $this->parse_search( $this->query_vars );
+		}
+
+		if ( ! $this->query_vars['suppress_filters'] ) {
+			/**
+			 * Filters the search SQL that is used in the WHERE clause of WP_Query.
+			 *
+			 * @since 3.0.0
+			 *
+			 * @param string   $search Search SQL for WHERE clause.
+			 * @param WP_Query $this   The current WP_Query object.
+			 */
+			$search = apply_filters_ref_array( 'posts_search', array( $search, &$this ) );
+		}
+
+		// Author stuff for nice URLs.
+
+		if ( '' !== $this->query_vars['author_name'] ) {
+			if ( strpos( $this->query_vars['author_name'], '/' ) !== false ) {
+				$this->query_vars['author_name'] = explode( '/', $this->query_vars['author_name'] );
+				if ( $this->query_vars['author_name'][ count( $this->query_vars['author_name'] ) - 1 ] ) {
+					$this->query_vars['author_name'] = $this->query_vars['author_name'][ count( $this->query_vars['author_name'] ) - 1 ]; // No trailing slash.
+				} else {
+					$this->query_vars['author_name'] = $this->query_vars['author_name'][ count( $this->query_vars['author_name'] ) - 2 ]; // There was a trailing slash.
+				}
+			}
+			$this->query_vars['author_name'] = sanitize_title_for_query( $this->query_vars['author_name'] );
+			$this->query_vars['author']      = get_user_by( 'slug', $this->query_vars['author_name'] );
+			if ( $this->query_vars['author'] ) {
+				$this->query_vars['author'] = $this->query_vars['author']->ID;
+			}
+			$whichauthor = " AND ({$wpdb->posts}.post_author = " . absint( $this->query_vars['author'] ) . ')';
+		}
+
+		// MIME-Type stuff for attachment browsing.
+
+		if ( isset( $this->query_vars['post_mime_type'] ) && '' !== $this->query_vars['post_mime_type'] ) {
+			$whichmimetype = wp_post_mime_type_where( $this->query_vars['post_mime_type'], $wpdb->posts );
+		}
+
+		$where .= $search . $whichauthor . $whichmimetype;
 
 		if ( $this->query_vars['page_id'] ) {
 			if ( ( 'page' !== get_option( 'show_on_front' ) ) || ( get_option( 'page_for_posts' ) != $this->query_vars['page_id'] ) ) {
