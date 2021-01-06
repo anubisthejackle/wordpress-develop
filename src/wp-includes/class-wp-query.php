@@ -1782,38 +1782,7 @@ class WP_Query {
 
 	}
 
-	/**
-	 * Retrieves an array of posts based on query variables.
-	 *
-	 * There are a few filters and actions that can be used to modify the post
-	 * database query.
-	 *
-	 * @since 1.5.0
-	 *
-	 * @global wpdb $wpdb WordPress database abstraction object.
-	 *
-	 * @return WP_Post[]|int[] Array of post objects or post IDs.
-	 */
-	public function get_posts() {
-		global $wpdb;
-
-		$this->pre_get_posts();
-
-		// Shorthand.
-		$q = &$this->query_vars;
-
-		// First let's clear some variables.
-		$distinct         = '';
-		$whichauthor      = '';
-		$whichmimetype    = '';
-		$where            = '';
-		$limits           = '';
-		$join             = '';
-		$search           = '';
-		$groupby          = '';
-		$post_status_join = false;
-		$page             = 1;
-
+	public function process_query_vars_for_get_posts(&$q) {
 		if ( isset( $q['caller_get_posts'] ) ) {
 			_deprecated_argument(
 				'WP_Query',
@@ -1866,7 +1835,7 @@ class WP_Query {
 				$q['post_type'] = '';
 			}
 		}
-		$post_type = $q['post_type'];
+
 		if ( empty( $q['posts_per_page'] ) ) {
 			$q['posts_per_page'] = get_option( 'posts_per_page' );
 		}
@@ -1922,6 +1891,42 @@ class WP_Query {
 		} else {
 			$q['no_found_rows'] = false;
 		}
+	}
+
+	/**
+	 * Retrieves an array of posts based on query variables.
+	 *
+	 * There are a few filters and actions that can be used to modify the post
+	 * database query.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @global wpdb $wpdb WordPress database abstraction object.
+	 *
+	 * @return WP_Post[]|int[] Array of post objects or post IDs.
+	 */
+	public function get_posts() {
+		global $wpdb;
+
+		$this->pre_get_posts();
+
+		// Shorthand.
+		$q = &$this->query_vars;
+
+		// First let's clear some variables.
+		$distinct         = '';
+		$whichauthor      = '';
+		$whichmimetype    = '';
+		$where            = '';
+		$limits           = '';
+		$join             = '';
+		$search           = '';
+		$groupby          = '';
+		$post_status_join = false;
+		$page             = 1;
+
+		$this->process_query_vars_for_get_posts($q);
+		$post_type = $q['post_type'];
 
 		switch ( $q['fields'] ) {
 			case 'ids':
@@ -1937,6 +1942,7 @@ class WP_Query {
 		if ( '' !== $q['menu_order'] ) {
 			$where .= " AND {$wpdb->posts}.menu_order = " . $q['menu_order'];
 		}
+
 		// The "m" parameter is meant for months but accepts datetimes of varying specificity.
 		if ( $q['m'] ) {
 			$where .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $q['m'], 0, 4 );
