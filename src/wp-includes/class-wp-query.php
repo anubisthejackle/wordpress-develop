@@ -2305,22 +2305,7 @@ class WP_Query {
 			}
 		}
 
-		$post_type_cap = null;
-		if ( is_array( $post_type ) && count( $post_type ) > 1 ) {
-			$post_type_cap = 'multiple_post_type';
-		} else {
-			if ( is_array( $post_type ) ) {
-				$post_type = reset( $post_type );
-			}
-			$post_type_object = get_post_type_object( $post_type );
-			if ( empty( $post_type_object ) ) {
-				$post_type_cap = $post_type;
-			}
-		}
-
-		$post_type_object = $this->build_post_type_object($post_type);
-
-		$where = $this->build_where_for_get_posts($where, $post_type, $post_type_object, $post_type_cap, $post_status_join, $join);
+		$where = $this->build_where_for_get_posts($where, $post_type, $post_status_join, $join);
 
 		$this->apply_pagination_filters($where, $join);
 
@@ -2604,7 +2589,7 @@ class WP_Query {
 
 	}
 
-	public function build_where_for_get_posts($where, $post_type, $post_type_object, $post_type_cap, $post_status_join, &$join){
+	public function build_where_for_get_posts($where, $post_type, $post_status_join, &$join){
 		global $wpdb;
 
 		if ( '' !== $this->query_vars['title'] ) {
@@ -2742,6 +2727,21 @@ class WP_Query {
 		} else {
 			$where .= " AND {$wpdb->posts}.post_type = 'post'";
 		}
+
+		$post_type_cap = null;
+		if ( is_array( $post_type ) && count( $post_type ) > 1 ) {
+			$post_type_cap = 'multiple_post_type';
+		} else {
+			if ( is_array( $post_type ) ) {
+				$post_type = reset( $post_type );
+			}
+			$post_type_object = get_post_type_object( $post_type );
+			if ( empty( $post_type_object ) ) {
+				$post_type_cap = $post_type;
+			}
+		}
+
+		$post_type_object = $this->build_post_type_object($post_type);
 
 		if ( ! empty( $post_type_object ) ) {
 			$edit_others_cap  = $post_type_object->cap->edit_others_posts;
