@@ -1974,13 +1974,6 @@ class WP_Query {
 			$q['p'] = absint( $q['attachment_id'] );
 		}
 
-		if ( $q['page_id'] ) {
-			if ( ( 'page' !== get_option( 'show_on_front' ) ) || ( get_option( 'page_for_posts' ) != $q['page_id'] ) ) {
-				$q['p'] = $q['page_id'];
-				$where  = " AND {$wpdb->posts}.ID = " . $q['page_id'];
-			}
-		}
-
 		// If a search pattern is specified, load the posts that match.
 		if ( strlen( $q['s'] ) ) {
 			$search = $this->parse_search( $q );
@@ -2536,6 +2529,13 @@ class WP_Query {
 
 	public function build_where_for_get_posts($where, $post_type, $post_status_join, &$join){
 		global $wpdb;
+
+		if ( $this->query_vars['page_id'] ) {
+			if ( ( 'page' !== get_option( 'show_on_front' ) ) || ( get_option( 'page_for_posts' ) != $this->query_vars['page_id'] ) ) {
+				$this->query_vars['p'] = $this->query_vars['page_id'];
+				$where  = " AND {$wpdb->posts}.ID = " . $this->query_vars['page_id'];
+			}
+		}
 
 		// Parameters related to 'post_name'.
 		if ( '' !== $this->query_vars['name'] ) {
