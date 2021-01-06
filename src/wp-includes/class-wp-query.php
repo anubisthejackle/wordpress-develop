@@ -2100,27 +2100,6 @@ class WP_Query {
 			$q['p'] = absint( $q['attachment_id'] );
 		}
 
-		// If a post number is specified, load that post.
-		if ( $q['p'] ) {
-			$where .= " AND {$wpdb->posts}.ID = " . $q['p'];
-		} elseif ( $q['post__in'] ) {
-			$post__in = implode( ',', array_map( 'absint', $q['post__in'] ) );
-			$where   .= " AND {$wpdb->posts}.ID IN ($post__in)";
-		} elseif ( $q['post__not_in'] ) {
-			$post__not_in = implode( ',', array_map( 'absint', $q['post__not_in'] ) );
-			$where       .= " AND {$wpdb->posts}.ID NOT IN ($post__not_in)";
-		}
-
-		if ( is_numeric( $q['post_parent'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_parent = %d ", $q['post_parent'] );
-		} elseif ( $q['post_parent__in'] ) {
-			$post_parent__in = implode( ',', array_map( 'absint', $q['post_parent__in'] ) );
-			$where          .= " AND {$wpdb->posts}.post_parent IN ($post_parent__in)";
-		} elseif ( $q['post_parent__not_in'] ) {
-			$post_parent__not_in = implode( ',', array_map( 'absint', $q['post_parent__not_in'] ) );
-			$where              .= " AND {$wpdb->posts}.post_parent NOT IN ($post_parent__not_in)";
-		}
-
 		if ( $q['page_id'] ) {
 			if ( ( 'page' !== get_option( 'show_on_front' ) ) || ( get_option( 'page_for_posts' ) != $q['page_id'] ) ) {
 				$q['p'] = $q['page_id'];
@@ -2248,14 +2227,6 @@ class WP_Query {
 				$q[ $key ][] = abs( $author );
 			}
 			$q['author'] = implode( ',', $authors );
-		}
-
-		if ( ! empty( $q['author__not_in'] ) ) {
-			$author__not_in = implode( ',', array_map( 'absint', array_unique( (array) $q['author__not_in'] ) ) );
-			$where         .= " AND {$wpdb->posts}.post_author NOT IN ($author__not_in) ";
-		} elseif ( ! empty( $q['author__in'] ) ) {
-			$author__in = implode( ',', array_map( 'absint', array_unique( (array) $q['author__in'] ) ) );
-			$where     .= " AND {$wpdb->posts}.post_author IN ($author__in) ";
 		}
 
 		// Author stuff for nice URLs.
@@ -2417,48 +2388,9 @@ class WP_Query {
 			}
 		}
 
-		if ( isset( $q['post_password'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_password = %s", $q['post_password'] );
-			if ( empty( $q['perm'] ) ) {
-				$q['perm'] = 'readable';
-			}
-		} elseif ( isset( $q['has_password'] ) ) {
-			$where .= sprintf( " AND {$wpdb->posts}.post_password %s ''", $q['has_password'] ? '!=' : '=' );
-		}
+		$where = $this->build_where_for_get_posts($where, $post_type);
 
-		if ( ! empty( $q['comment_status'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_status = %s ", $q['comment_status'] );
-		}
-
-		if ( ! empty( $q['ping_status'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.ping_status = %s ", $q['ping_status'] );
-		}
-
-		if ( 'any' === $post_type ) {
-			$in_search_post_types = get_post_types( array( 'exclude_from_search' => false ) );
-			if ( empty( $in_search_post_types ) ) {
-				$where .= ' AND 1=0 ';
-			} else {
-				$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", array_map( 'esc_sql', $in_search_post_types ) ) . "')";
-			}
-		} elseif ( ! empty( $post_type ) && is_array( $post_type ) ) {
-			$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", esc_sql( $post_type ) ) . "')";
-		} elseif ( ! empty( $post_type ) ) {
-			$where           .= $wpdb->prepare( " AND {$wpdb->posts}.post_type = %s", $post_type );
-			$post_type_object = get_post_type_object( $post_type );
-		} elseif ( $this->is_attachment ) {
-			$where           .= " AND {$wpdb->posts}.post_type = 'attachment'";
-			$post_type_object = get_post_type_object( 'attachment' );
-		} elseif ( $this->is_page ) {
-			$where           .= " AND {$wpdb->posts}.post_type = 'page'";
-			$post_type_object = get_post_type_object( 'page' );
-		} else {
-			$where           .= " AND {$wpdb->posts}.post_type = 'post'";
-			$post_type_object = get_post_type_object( 'post' );
-		}
-
-		$edit_cap = 'edit_post';
-		$read_cap = 'read_post';
+		$post_type_object = $this->build_post_type_object($post_type);
 
 		if ( ! empty( $post_type_object ) ) {
 			$edit_others_cap  = $post_type_object->cap->edit_others_posts;
@@ -2816,10 +2748,107 @@ class WP_Query {
 			}
 		}
 
-		$this->handle_post_processing_of_retrieved_posts($page, $post_type, $q_status);
+		$this->handle_post_processing_of_retrieved_posts($page, $post_type);
 		$this->handle_lazy_loading();
 
 		return $this->posts;
+	}
+
+	public function build_post_type_object($post_type){
+
+		if('any' === $post_type){
+			return;
+		}
+
+		if ( !empty( $post_type ) && is_array($post_type) ){
+			return;
+		}
+
+		if ( ! empty( $post_type ) ) {
+			return get_post_type_object( $post_type );
+		}
+
+		if ( $this->is_attachment ) {
+			return get_post_type_object( 'attachment' );
+		}
+
+		if ( $this->is_page ) {
+			return get_post_type_object( 'page' );
+		}
+
+		return get_post_type_object( 'post' );
+
+	}
+
+	public function build_where_for_get_posts($where, $post_type){
+		global $wpdb;
+
+		if ( ! empty( $this->query_vars['author__not_in'] ) ) {
+			$author__not_in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__not_in'] ) ) );
+			$where         .= " AND {$wpdb->posts}.post_author NOT IN ($author__not_in) ";
+		} elseif ( ! empty( $this->query_vars['author__in'] ) ) {
+			$author__in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__in'] ) ) );
+			$where     .= " AND {$wpdb->posts}.post_author IN ($author__in) ";
+		}
+
+		// If a post number is specified, load that post.
+		if ( $this->query_vars['p'] ) {
+			$where .= " AND {$wpdb->posts}.ID = " . $this->query_vars['p'];
+		} elseif ( $this->query_vars['post__in'] ) {
+			$post__in = implode( ',', array_map( 'absint', $this->query_vars['post__in'] ) );
+			$where   .= " AND {$wpdb->posts}.ID IN ($post__in)";
+		} elseif ( $this->query_vars['post__not_in'] ) {
+			$post__not_in = implode( ',', array_map( 'absint', $this->query_vars['post__not_in'] ) );
+			$where       .= " AND {$wpdb->posts}.ID NOT IN ($post__not_in)";
+		}
+
+		if ( is_numeric( $this->query_vars['post_parent'] ) ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_parent = %d ", $this->query_vars['post_parent'] );
+		} elseif ( $this->query_vars['post_parent__in'] ) {
+			$post_parent__in = implode( ',', array_map( 'absint', $this->query_vars['post_parent__in'] ) );
+			$where          .= " AND {$wpdb->posts}.post_parent IN ($post_parent__in)";
+		} elseif ( $this->query_vars['post_parent__not_in'] ) {
+			$post_parent__not_in = implode( ',', array_map( 'absint', $this->query_vars['post_parent__not_in'] ) );
+			$where              .= " AND {$wpdb->posts}.post_parent NOT IN ($post_parent__not_in)";
+		}
+
+		if ( isset( $this->query_vars['post_password'] ) ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_password = %s", $this->query_vars['post_password'] );
+			if ( empty( $this->query_vars['perm'] ) ) {
+				$this->query_vars['perm'] = 'readable';
+			}
+		} elseif ( isset( $this->query_vars['has_password'] ) ) {
+			$where .= sprintf( " AND {$wpdb->posts}.post_password %s ''", $this->query_vars['has_password'] ? '!=' : '=' );
+		}
+
+		if ( ! empty( $this->query_vars['comment_status'] ) ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_status = %s ", $this->query_vars['comment_status'] );
+		}
+
+		if ( ! empty( $this->query_vars['ping_status'] ) ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.ping_status = %s ", $this->query_vars['ping_status'] );
+		}
+
+		if ( 'any' === $post_type ) {
+			$in_search_post_types = get_post_types( array( 'exclude_from_search' => false ) );
+			if ( empty( $in_search_post_types ) ) {
+				$where .= ' AND 1=0 ';
+			} else {
+				$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", array_map( 'esc_sql', $in_search_post_types ) ) . "')";
+			}
+		} elseif ( ! empty( $post_type ) && is_array( $post_type ) ) {
+			$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", esc_sql( $post_type ) ) . "')";
+		} elseif ( ! empty( $post_type ) ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_type = %s", $post_type );
+		} elseif ( $this->is_attachment ) {
+			$where .= " AND {$wpdb->posts}.post_type = 'attachment'";
+		} elseif ( $this->is_page ) {
+			$where .= " AND {$wpdb->posts}.post_type = 'page'";
+		} else {
+			$where .= " AND {$wpdb->posts}.post_type = 'post'";
+		}
+
+		return $where;
 	}
 
 	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$fields, &$limits, &$pieces){
@@ -2967,7 +2996,7 @@ class WP_Query {
 
 	}
 
-	public function handle_post_processing_of_retrieved_posts($page, $post_type, $q_status) {
+	public function handle_post_processing_of_retrieved_posts($page, $post_type) {
 		// Convert to WP_Post objects.
 		if ( $this->posts ) {
 			/** @var WP_Post[] */
@@ -2988,7 +3017,7 @@ class WP_Query {
 
 		$this->process_comment_filters();
 
-		$this->verify_post_should_display($q_status);
+		$this->verify_post_should_display();
 
 		$this->process_sticky_posts($page, $post_type);
 
@@ -3146,7 +3175,7 @@ class WP_Query {
 		}
 	}
 
-	public function verify_post_should_display($q_status){
+	public function verify_post_should_display(){
 		$edit_cap = 'edit_post';
 		$read_cap = 'read_post';
 		// Check post status to determine if post should be displayed.
@@ -3157,6 +3186,16 @@ class WP_Query {
 				$this->is_page       = false;
 				$this->is_single     = true;
 				$this->is_attachment = true;
+			}
+
+			$q_status = array();
+
+			if(!empty($this->query_vars['post_status'])){
+				$q_status     = $this->query_vars['post_status'];
+			}
+
+			if ( ! is_array( $q_status ) ) {
+				$q_status = explode( ',', $q_status );
 			}
 
 			// If the post_status was specifically requested, let it pass through.
