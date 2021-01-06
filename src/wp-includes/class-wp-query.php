@@ -1754,20 +1754,11 @@ class WP_Query {
 	}
 
 	/**
-	 * Retrieves an array of posts based on query variables.
+	 * Run setup for get_posts
 	 *
-	 * There are a few filters and actions that can be used to modify the post
-	 * database query.
-	 *
-	 * @since 1.5.0
-	 *
-	 * @global wpdb $wpdb WordPress database abstraction object.
-	 *
-	 * @return WP_Post[]|int[] Array of post objects or post IDs.
+	 * @since Unknown
 	 */
-	public function get_posts() {
-		global $wpdb;
-
+	public function pre_get_posts() {
 		$this->parse_query();
 
 		/**
@@ -1783,23 +1774,33 @@ class WP_Query {
 		 */
 		do_action_ref_array( 'pre_get_posts', array( &$this ) );
 
+		// Fill again in case 'pre_get_posts' unset some vars.
+		$this->query_vars = $this->fill_query_vars( $this->query_vars );
+		$this->validate_query_vars();
+
+		$this->parse_meta_query();
+
+	}
+
+	/**
+	 * Retrieves an array of posts based on query variables.
+	 *
+	 * There are a few filters and actions that can be used to modify the post
+	 * database query.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @global wpdb $wpdb WordPress database abstraction object.
+	 *
+	 * @return WP_Post[]|int[] Array of post objects or post IDs.
+	 */
+	public function get_posts() {
+		global $wpdb;
+
+		$this->pre_get_posts();
+
 		// Shorthand.
 		$q = &$this->query_vars;
-
-		// Fill again in case 'pre_get_posts' unset some vars.
-		$q = $this->fill_query_vars( $q );
-
-		// Parse meta query.
-		$this->meta_query = new WP_Meta_Query();
-		$this->meta_query->parse_query_vars( $q );
-
-		// Set a flag if a 'pre_get_posts' hook changed the query vars.
-		$hash = md5( serialize( $this->query_vars ) );
-		if ( $hash != $this->query_vars_hash ) {
-			$this->query_vars_changed = true;
-			$this->query_vars_hash    = $hash;
-		}
-		unset( $hash );
 
 		// First let's clear some variables.
 		$distinct         = '';
@@ -3138,54 +3139,7 @@ class WP_Query {
 			}
 		}
 
-		// Put sticky posts at the top of the posts array.
-		$sticky_posts = get_option( 'sticky_posts' );
-		if ( $this->is_home && $page <= 1 && is_array( $sticky_posts ) && ! empty( $sticky_posts ) && ! $q['ignore_sticky_posts'] ) {
-			$num_posts     = count( $this->posts );
-			$sticky_offset = 0;
-			// Loop over posts and relocate stickies to the front.
-			for ( $i = 0; $i < $num_posts; $i++ ) {
-				if ( in_array( $this->posts[ $i ]->ID, $sticky_posts, true ) ) {
-					$sticky_post = $this->posts[ $i ];
-					// Remove sticky from current position.
-					array_splice( $this->posts, $i, 1 );
-					// Move to front, after other stickies.
-					array_splice( $this->posts, $sticky_offset, 0, array( $sticky_post ) );
-					// Increment the sticky offset. The next sticky will be placed at this offset.
-					$sticky_offset++;
-					// Remove post from sticky posts array.
-					$offset = array_search( $sticky_post->ID, $sticky_posts, true );
-					unset( $sticky_posts[ $offset ] );
-				}
-			}
-
-			// If any posts have been excluded specifically, Ignore those that are sticky.
-			if ( ! empty( $sticky_posts ) && ! empty( $q['post__not_in'] ) ) {
-				$sticky_posts = array_diff( $sticky_posts, $q['post__not_in'] );
-			}
-
-			// Fetch sticky posts that weren't in the query results.
-			if ( ! empty( $sticky_posts ) ) {
-				$stickies = get_posts(
-					array(
-						'post__in'    => $sticky_posts,
-						'post_type'   => $post_type,
-						'post_status' => 'publish',
-						'nopaging'    => true,
-					)
-				);
-
-				foreach ( $stickies as $sticky_post ) {
-					array_splice( $this->posts, $sticky_offset, 0, array( $sticky_post ) );
-					$sticky_offset++;
-				}
-			}
-		}
-
-		// If comments have been fetched as part of the query, make sure comment meta lazy-loading is set up.
-		if ( ! empty( $this->comments ) ) {
-			wp_queue_comments_for_comment_meta_lazyload( $this->comments );
-		}
+		$this->process_sticky_posts($page, $post_type);
 
 		if ( ! $q['suppress_filters'] ) {
 			/**
@@ -3200,30 +3154,140 @@ class WP_Query {
 			$this->posts = apply_filters_ref_array( 'the_posts', array( $this->posts, &$this ) );
 		}
 
-		// Ensure that any posts added/modified via one of the filters above are
-		// of the type WP_Post and are filtered.
-		if ( $this->posts ) {
-			$this->post_count = count( $this->posts );
+		$this->ensure_posts_are_wp_posts($post_type);
 
-			/** @var WP_Post[] */
-			$this->posts = array_map( 'get_post', $this->posts );
+		$this->handle_lazy_loading();
 
-			if ( $q['cache_results'] ) {
-				update_post_caches( $this->posts, $post_type, $q['update_post_term_cache'], $q['update_post_meta_cache'] );
-			}
+		return $this->posts;
+	}
 
-			/** @var WP_Post */
-			$this->post = reset( $this->posts );
-		} else {
-			$this->post_count = 0;
-			$this->posts      = array();
+	/**
+	 * Put sticky posts at the top of the posts array
+	 *
+	 * @since Unknown
+	 */
+	public function process_sticky_posts($page, $post_type) {
+
+		if ( $page > 1 || !$this->is_home || $this->query_vars['ignore_sticky_posts'] ) {
+			return;
 		}
 
-		if ( $q['lazy_load_term_meta'] ) {
+		// Put sticky posts at the top of the posts array.
+		$sticky_posts = get_option( 'sticky_posts' );
+
+		if ( !is_array( $sticky_posts ) || empty( $sticky_posts ) ) {
+			return;
+		}
+
+		$num_posts     = count( $this->posts );
+		$sticky_offset = 0;
+		// Loop over posts and relocate stickies to the front.
+		for ( $i = 0; $i < $num_posts; $i++ ) {
+			if ( in_array( $this->posts[ $i ]->ID, $sticky_posts, true ) ) {
+				$sticky_post = $this->posts[ $i ];
+				// Remove sticky from current position.
+				array_splice( $this->posts, $i, 1 );
+				// Move to front, after other stickies.
+				array_splice( $this->posts, $sticky_offset, 0, array( $sticky_post ) );
+				// Increment the sticky offset. The next sticky will be placed at this offset.
+				$sticky_offset++;
+				// Remove post from sticky posts array.
+				$offset = array_search( $sticky_post->ID, $sticky_posts, true );
+				unset( $sticky_posts[ $offset ] );
+			}
+		}
+
+		// If any posts have been excluded specifically, Ignore those that are sticky.
+		if ( ! empty( $sticky_posts ) && ! empty( $this->query_vars['post__not_in'] ) ) {
+			$sticky_posts = array_diff( $sticky_posts, $this->query_vars['post__not_in'] );
+		}
+
+		// Fetch sticky posts that weren't in the query results.
+		if ( ! empty( $sticky_posts ) ) {
+			$stickies = get_posts(
+				array(
+					'post__in'    => $sticky_posts,
+					'post_type'   => $post_type,
+					'post_status' => 'publish',
+					'nopaging'    => true,
+				)
+			);
+
+			foreach ( $stickies as $sticky_post ) {
+				array_splice( $this->posts, $sticky_offset, 0, array( $sticky_post ) );
+				$sticky_offset++;
+			}
+		}
+	}
+
+	/**
+	 * Ensure that any posts added or modified a filter are of type WP_Post
+	 *
+	 * @since Unknown
+	 */
+	public function ensure_posts_are_wp_posts($post_type){
+
+		if ( !is_array($this->posts) || 0 === count($this->posts) ) {
+			$this->post_count = 0;
+			$this->posts      =  array();
+			return;
+		}
+
+		$this->post_count = count( $this->posts );
+
+		/** @var WP_Post[] */
+		$this->posts = array_map( 'get_post', $this->posts );
+
+		if ( $this->query_vars['cache_results'] ) {
+			update_post_caches( $this->posts, $post_type, $this->query_vars['update_post_term_cache'], $this->query_vars['update_post_meta_cache'] );
+		}
+
+		/** @var WP_Post */
+		$this->post = reset( $this->posts );
+	}
+
+	/**
+	 * Handle lazy loading for Comments and Term Meta for get_posts
+	 *
+	 * @since Unknown
+	 */
+	public function handle_lazy_loading(){
+
+		if ( ! empty( $this->comments ) ) {
+			wp_queue_comments_for_comment_meta_lazyload( $this->comments );
+		}
+
+		if($this->query_vars['lazy_load_term_meta']){
 			wp_queue_posts_for_term_meta_lazyload( $this->posts );
 		}
 
-		return $this->posts;
+	}
+
+	/**
+	 * Set a flag if query vars have been changed.
+	 *
+	 * @since Unknown
+	 */
+	public function validate_query_vars(){
+		$serializedQueryVars = serialize( $this->query_vars );
+
+		$hash = md5( $serializedQueryVars );
+
+		if ( $hash != $this->query_vars_hash ) {
+			$this->query_vars_changed = true;
+			$this->query_vars_hash    = $hash;
+		}
+	}
+
+	/**
+	 * Parse meta query from query vars.
+	 *
+	 * @since Unknown
+	 */
+	public function parse_meta_query(){
+		// Parse meta query.
+		$this->meta_query = new WP_Meta_Query();
+		$this->meta_query->parse_query_vars( $this->query_vars );
 	}
 
 	/**
