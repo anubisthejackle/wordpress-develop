@@ -1969,10 +1969,6 @@ class WP_Query {
 			unset( $ptype_obj );
 		}
 
-		if ( '' !== $q['title'] ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_title = %s", stripslashes( $q['title'] ) );
-		}
-
 		// Parameters related to 'post_name'.
 		if ( '' !== $q['name'] ) {
 			$q['name'] = sanitize_title_for_query( $q['name'] );
@@ -2610,6 +2606,10 @@ class WP_Query {
 
 	public function build_where_for_get_posts($where, $post_type, $post_type_object, $post_type_cap, $post_status_join, &$join){
 		global $wpdb;
+
+		if ( '' !== $this->query_vars['title'] ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_title = %s", stripslashes( $this->query_vars['title'] ) );
+		}
 
 		if ( '' !== $this->query_vars['menu_order'] ) {
 			$where .= " AND {$wpdb->posts}.menu_order = " . $this->query_vars['menu_order'];
