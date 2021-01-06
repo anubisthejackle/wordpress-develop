@@ -2951,13 +2951,20 @@ class WP_Query {
 			}
 		}
 
+		$this->handle_post_processing_of_retrieved_posts($page, $post_type, $q_status);
+		$this->handle_lazy_loading();
+
+		return $this->posts;
+	}
+
+	public function handle_post_processing_of_retrieved_posts($page, $post_type, $q_status) {
 		// Convert to WP_Post objects.
 		if ( $this->posts ) {
 			/** @var WP_Post[] */
 			$this->posts = array_map( 'get_post', $this->posts );
 		}
 
-		if ( ! $q['suppress_filters'] ) {
+		if ( ! $this->query_vars['suppress_filters'] ) {
 			/**
 			 * Filters the raw post results array, prior to status checks.
 			 *
@@ -2975,7 +2982,7 @@ class WP_Query {
 
 		$this->process_sticky_posts($page, $post_type);
 
-		if ( ! $q['suppress_filters'] ) {
+		if ( ! $this->query_vars['suppress_filters'] ) {
 			/**
 			 * Filters the array of retrieved posts after they've been fetched and
 			 * internally processed.
@@ -2990,9 +2997,6 @@ class WP_Query {
 
 		$this->ensure_posts_are_wp_posts($post_type);
 
-		$this->handle_lazy_loading();
-
-		return $this->posts;
 	}
 
 	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$limits, &$fields, &$pieces) {
