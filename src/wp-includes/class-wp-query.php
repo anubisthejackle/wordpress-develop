@@ -1909,71 +1909,35 @@ class WP_Query {
 		return $fields;
 	}
 
-	/**
-	 * Retrieves an array of posts based on query variables.
-	 *
-	 * There are a few filters and actions that can be used to modify the post
-	 * database query.
-	 *
-	 * @since 1.5.0
-	 *
-	 * @global wpdb $wpdb WordPress database abstraction object.
-	 *
-	 * @return WP_Post[]|int[] Array of post objects or post IDs.
-	 */
-	public function get_posts() {
-		global $wpdb;
-
-		$this->pre_get_posts();
-
-		// Shorthand.
-		$q = &$this->query_vars;
-
-		// First let's clear some variables.
-		$distinct         = '';
-		$where            = '';
-		$limits           = '';
-		$join             = '';
-		$groupby          = '';
-		$post_status_join = false;
-		$page             = 1;
-
-		$this->process_query_vars_for_get_posts($q);
-		$post_type = $q['post_type'];
-
-		$fields = $this->process_fields_for_get_posts();
-
+	public function process_post_type_for_get_posts() {
 		// If we've got a post_type AND it's not "any" post_type.
-		if ( ! empty( $q['post_type'] ) && 'any' !== $q['post_type'] ) {
-			foreach ( (array) $q['post_type'] as $_post_type ) {
+		if ( ! empty( $this->query_vars['post_type'] ) && 'any' !== $this->query_vars['post_type'] ) {
+			foreach ( (array) $this->query_vars['post_type'] as $_post_type ) {
 				$ptype_obj = get_post_type_object( $_post_type );
-				if ( ! $ptype_obj || ! $ptype_obj->query_var || empty( $q[ $ptype_obj->query_var ] ) ) {
+				if ( ! $ptype_obj || ! $ptype_obj->query_var || empty( $this->query_vars[ $ptype_obj->query_var ] ) ) {
 					continue;
 				}
 
 				if ( ! $ptype_obj->hierarchical ) {
 					// Non-hierarchical post types can directly use 'name'.
-					$q['name'] = $q[ $ptype_obj->query_var ];
+					$this->query_vars['name'] = $this->query_vars[ $ptype_obj->query_var ];
 				} else {
 					// Hierarchical post types will operate through 'pagename'.
-					$q['pagename'] = $q[ $ptype_obj->query_var ];
-					$q['name']     = '';
+					$this->query_vars['pagename'] = $this->query_vars[ $ptype_obj->query_var ];
+					$this->query_vars['name']     = '';
 				}
 
 				// Only one request for a slug is possible, this is why name & pagename are overwritten above.
 				break;
 			} // End foreach.
-			unset( $ptype_obj );
 		}
+	}
 
-		// If an attachment is requested by number, let it supersede any post number.
-		if ( $q['attachment_id'] ) {
-			$q['p'] = absint( $q['attachment_id'] );
-		}
+	public function process_taxonomy_for_get_posts(&$join, &$where, &$groupby, &$post_type, &$post_status_join) {
+		global $wpdb;
 
-		// Taxonomies.
 		if ( ! $this->is_singular ) {
-			$this->parse_tax_query( $q );
+			$this->parse_tax_query( $this->query_vars );
 
 			$clauses = $this->tax_query->get_sql( $wpdb->posts, 'ID' );
 
@@ -1981,6 +1945,7 @@ class WP_Query {
 			$where .= $clauses['where'];
 		}
 
+		// Taxonomies.
 		if ( $this->is_tax ) {
 			if ( empty( $post_type ) ) {
 				// Do a fully inclusive search for currently registered post types of queried taxonomies.
@@ -2014,19 +1979,19 @@ class WP_Query {
 			 * Set 'taxonomy', 'term', and 'term_id' to the
 			 * first taxonomy other than 'post_tag' or 'category'.
 			 */
-			if ( ! isset( $q['taxonomy'] ) ) {
+			if ( ! isset( $this->query_vars['taxonomy'] ) ) {
 				foreach ( $this->tax_query->queried_terms as $queried_taxonomy => $queried_items ) {
 					if ( empty( $queried_items['terms'][0] ) ) {
 						continue;
 					}
 
 					if ( ! in_array( $queried_taxonomy, array( 'category', 'post_tag' ), true ) ) {
-						$q['taxonomy'] = $queried_taxonomy;
+						$this->query_vars['taxonomy'] = $queried_taxonomy;
 
 						if ( 'slug' === $queried_items['field'] ) {
-							$q['term'] = $queried_items['terms'][0];
+							$this->query_vars['term'] = $queried_items['terms'][0];
 						} else {
-							$q['term_id'] = $queried_items['terms'][0];
+							$this->query_vars['term_id'] = $queried_items['terms'][0];
 						}
 
 						// Take the first one we find.
@@ -2063,6 +2028,51 @@ class WP_Query {
 		if ( ! empty( $this->tax_query->queries ) || ! empty( $this->meta_query->queries ) ) {
 			$groupby = "{$wpdb->posts}.ID";
 		}
+
+	}
+
+	/**
+	 * Retrieves an array of posts based on query variables.
+	 *
+	 * There are a few filters and actions that can be used to modify the post
+	 * database query.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @global wpdb $wpdb WordPress database abstraction object.
+	 *
+	 * @return WP_Post[]|int[] Array of post objects or post IDs.
+	 */
+	public function get_posts() {
+		global $wpdb;
+
+		$this->pre_get_posts();
+
+		// Shorthand.
+		$q = &$this->query_vars;
+
+		// First let's clear some variables.
+		$distinct         = '';
+		$where            = '';
+		$limits           = '';
+		$join             = '';
+		$groupby          = '';
+		$post_status_join = false;
+		$page             = 1;
+
+		$this->process_query_vars_for_get_posts($q);
+		$post_type = $q['post_type'];
+
+		$fields = $this->process_fields_for_get_posts();
+
+		$this->process_post_type_for_get_posts();
+
+		// If an attachment is requested by number, let it supersede any post number.
+		if ( $q['attachment_id'] ) {
+			$q['p'] = absint( $q['attachment_id'] );
+		}
+
+		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_type, $post_status_join);
 
 		// Author/user stuff.
 
