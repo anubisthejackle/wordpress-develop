@@ -1946,73 +1946,6 @@ class WP_Query {
 
 		$fields = $this->process_fields_for_get_posts();
 
-		if ( '' !== $q['menu_order'] ) {
-			$where .= " AND {$wpdb->posts}.menu_order = " . $q['menu_order'];
-		}
-
-		// The "m" parameter is meant for months but accepts datetimes of varying specificity.
-		if ( $q['m'] ) {
-			$where .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $q['m'], 0, 4 );
-			if ( strlen( $q['m'] ) > 5 ) {
-				$where .= " AND MONTH({$wpdb->posts}.post_date)=" . substr( $q['m'], 4, 2 );
-			}
-			if ( strlen( $q['m'] ) > 7 ) {
-				$where .= " AND DAYOFMONTH({$wpdb->posts}.post_date)=" . substr( $q['m'], 6, 2 );
-			}
-			if ( strlen( $q['m'] ) > 9 ) {
-				$where .= " AND HOUR({$wpdb->posts}.post_date)=" . substr( $q['m'], 8, 2 );
-			}
-			if ( strlen( $q['m'] ) > 11 ) {
-				$where .= " AND MINUTE({$wpdb->posts}.post_date)=" . substr( $q['m'], 10, 2 );
-			}
-			if ( strlen( $q['m'] ) > 13 ) {
-				$where .= " AND SECOND({$wpdb->posts}.post_date)=" . substr( $q['m'], 12, 2 );
-			}
-		}
-
-		// Handle the other individual date parameters.
-		$date_parameters = array();
-
-		if ( '' !== $q['hour'] ) {
-			$date_parameters['hour'] = $q['hour'];
-		}
-
-		if ( '' !== $q['minute'] ) {
-			$date_parameters['minute'] = $q['minute'];
-		}
-
-		if ( '' !== $q['second'] ) {
-			$date_parameters['second'] = $q['second'];
-		}
-
-		if ( $q['year'] ) {
-			$date_parameters['year'] = $q['year'];
-		}
-
-		if ( $q['monthnum'] ) {
-			$date_parameters['monthnum'] = $q['monthnum'];
-		}
-
-		if ( $q['w'] ) {
-			$date_parameters['week'] = $q['w'];
-		}
-
-		if ( $q['day'] ) {
-			$date_parameters['day'] = $q['day'];
-		}
-
-		if ( $date_parameters ) {
-			$date_query = new WP_Date_Query( array( $date_parameters ) );
-			$where     .= $date_query->get_sql();
-		}
-		unset( $date_parameters, $date_query );
-
-		// Handle complex date queries.
-		if ( ! empty( $q['date_query'] ) ) {
-			$this->date_query = new WP_Date_Query( $q['date_query'] );
-			$where           .= $this->date_query->get_sql();
-		}
-
 		// If we've got a post_type AND it's not "any" post_type.
 		if ( ! empty( $q['post_type'] ) && 'any' !== $q['post_type'] ) {
 			foreach ( (array) $q['post_type'] as $_post_type ) {
@@ -2376,6 +2309,7 @@ class WP_Query {
 			}
 		}
 
+		$post_type_cap = null;
 		if ( is_array( $post_type ) && count( $post_type ) > 1 ) {
 			$post_type_cap = 'multiple_post_type';
 		} else {
@@ -2388,115 +2322,9 @@ class WP_Query {
 			}
 		}
 
-		$where = $this->build_where_for_get_posts($where, $post_type);
-
 		$post_type_object = $this->build_post_type_object($post_type);
 
-		if ( ! empty( $post_type_object ) ) {
-			$edit_others_cap  = $post_type_object->cap->edit_others_posts;
-			$read_private_cap = $post_type_object->cap->read_private_posts;
-		} else {
-			$edit_others_cap  = 'edit_others_' . $post_type_cap . 's';
-			$read_private_cap = 'read_private_' . $post_type_cap . 's';
-		}
-
-		$user_id = get_current_user_id();
-
-		$q_status = array();
-		if ( ! empty( $q['post_status'] ) ) {
-			$statuswheres = array();
-			$q_status     = $q['post_status'];
-			if ( ! is_array( $q_status ) ) {
-				$q_status = explode( ',', $q_status );
-			}
-			$r_status = array();
-			$p_status = array();
-			$e_status = array();
-			if ( in_array( 'any', $q_status, true ) ) {
-				foreach ( get_post_stati( array( 'exclude_from_search' => true ) ) as $status ) {
-					if ( ! in_array( $status, $q_status, true ) ) {
-						$e_status[] = "{$wpdb->posts}.post_status <> '$status'";
-					}
-				}
-			} else {
-				foreach ( get_post_stati() as $status ) {
-					if ( in_array( $status, $q_status, true ) ) {
-						if ( 'private' === $status ) {
-							$p_status[] = "{$wpdb->posts}.post_status = '$status'";
-						} else {
-							$r_status[] = "{$wpdb->posts}.post_status = '$status'";
-						}
-					}
-				}
-			}
-
-			if ( empty( $q['perm'] ) || 'readable' !== $q['perm'] ) {
-				$r_status = array_merge( $r_status, $p_status );
-				unset( $p_status );
-			}
-
-			if ( ! empty( $e_status ) ) {
-				$statuswheres[] = '(' . implode( ' AND ', $e_status ) . ')';
-			}
-			if ( ! empty( $r_status ) ) {
-				if ( ! empty( $q['perm'] ) && 'editable' === $q['perm'] && ! current_user_can( $edit_others_cap ) ) {
-					$statuswheres[] = "({$wpdb->posts}.post_author = $user_id " . 'AND (' . implode( ' OR ', $r_status ) . '))';
-				} else {
-					$statuswheres[] = '(' . implode( ' OR ', $r_status ) . ')';
-				}
-			}
-			if ( ! empty( $p_status ) ) {
-				if ( ! empty( $q['perm'] ) && 'readable' === $q['perm'] && ! current_user_can( $read_private_cap ) ) {
-					$statuswheres[] = "({$wpdb->posts}.post_author = $user_id " . 'AND (' . implode( ' OR ', $p_status ) . '))';
-				} else {
-					$statuswheres[] = '(' . implode( ' OR ', $p_status ) . ')';
-				}
-			}
-			if ( $post_status_join ) {
-				$join .= " LEFT JOIN {$wpdb->posts} AS p2 ON ({$wpdb->posts}.post_parent = p2.ID) ";
-				foreach ( $statuswheres as $index => $statuswhere ) {
-					$statuswheres[ $index ] = "($statuswhere OR ({$wpdb->posts}.post_status = 'inherit' AND " . str_replace( $wpdb->posts, 'p2', $statuswhere ) . '))';
-				}
-			}
-			$where_status = implode( ' OR ', $statuswheres );
-			if ( ! empty( $where_status ) ) {
-				$where .= " AND ($where_status)";
-			}
-		} elseif ( ! $this->is_singular ) {
-			$where .= " AND ({$wpdb->posts}.post_status = 'publish'";
-
-			// Add public states.
-			$public_states = get_post_stati( array( 'public' => true ) );
-			foreach ( (array) $public_states as $state ) {
-				if ( 'publish' === $state ) { // Publish is hard-coded above.
-					continue;
-				}
-				$where .= " OR {$wpdb->posts}.post_status = '$state'";
-			}
-
-			if ( $this->is_admin ) {
-				// Add protected states that should show in the admin all list.
-				$admin_all_states = get_post_stati(
-					array(
-						'protected'              => true,
-						'show_in_admin_all_list' => true,
-					)
-				);
-				foreach ( (array) $admin_all_states as $state ) {
-					$where .= " OR {$wpdb->posts}.post_status = '$state'";
-				}
-			}
-
-			if ( is_user_logged_in() ) {
-				// Add private states that are limited to viewing by the author of a post or someone who has caps to read private states.
-				$private_states = get_post_stati( array( 'private' => true ) );
-				foreach ( (array) $private_states as $state ) {
-					$where .= current_user_can( $read_private_cap ) ? " OR {$wpdb->posts}.post_status = '$state'" : " OR {$wpdb->posts}.post_author = $user_id AND {$wpdb->posts}.post_status = '$state'";
-				}
-			}
-
-			$where .= ')';
-		}
+		$where = $this->build_where_for_get_posts($where, $post_type, $post_type_object, $post_type_cap, $post_status_join, $join);
 
 		$this->apply_pagination_filters($where, $join);
 
@@ -2780,8 +2608,75 @@ class WP_Query {
 
 	}
 
-	public function build_where_for_get_posts($where, $post_type){
+	public function build_where_for_get_posts($where, $post_type, $post_type_object, $post_type_cap, $post_status_join, &$join){
 		global $wpdb;
+
+		if ( '' !== $this->query_vars['menu_order'] ) {
+			$where .= " AND {$wpdb->posts}.menu_order = " . $this->query_vars['menu_order'];
+		}
+
+		// The "m" parameter is meant for months but accepts datetimes of varying specificity.
+		if ( $this->query_vars['m'] ) {
+			$where .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 0, 4 );
+			if ( strlen( $this->query_vars['m'] ) > 5 ) {
+				$where .= " AND MONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 4, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 7 ) {
+				$where .= " AND DAYOFMONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 6, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 9 ) {
+				$where .= " AND HOUR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 8, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 11 ) {
+				$where .= " AND MINUTE({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 10, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 13 ) {
+				$where .= " AND SECOND({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 12, 2 );
+			}
+		}
+
+		// Handle the other individual date parameters.
+		$date_parameters = array();
+
+		if ( '' !== $this->query_vars['hour'] ) {
+			$date_parameters['hour'] = $this->query_vars['hour'];
+		}
+
+		if ( '' !== $this->query_vars['minute'] ) {
+			$date_parameters['minute'] = $this->query_vars['minute'];
+		}
+
+		if ( '' !== $this->query_vars['second'] ) {
+			$date_parameters['second'] = $this->query_vars['second'];
+		}
+
+		if ( $this->query_vars['year'] ) {
+			$date_parameters['year'] = $this->query_vars['year'];
+		}
+
+		if ( $this->query_vars['monthnum'] ) {
+			$date_parameters['monthnum'] = $this->query_vars['monthnum'];
+		}
+
+		if ( $this->query_vars['w'] ) {
+			$date_parameters['week'] = $this->query_vars['w'];
+		}
+
+		if ( $this->query_vars['day'] ) {
+			$date_parameters['day'] = $this->query_vars['day'];
+		}
+
+		if ( $date_parameters ) {
+			$date_query = new WP_Date_Query( array( $date_parameters ) );
+			$where     .= $date_query->get_sql();
+		}
+		unset( $date_parameters, $date_query );
+
+		// Handle complex date queries.
+		if ( ! empty( $this->query_vars['date_query'] ) ) {
+			$this->date_query = new WP_Date_Query( $this->query_vars['date_query'] );
+			$where           .= $this->date_query->get_sql();
+		}
 
 		if ( ! empty( $this->query_vars['author__not_in'] ) ) {
 			$author__not_in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__not_in'] ) ) );
@@ -2846,6 +2741,112 @@ class WP_Query {
 			$where .= " AND {$wpdb->posts}.post_type = 'page'";
 		} else {
 			$where .= " AND {$wpdb->posts}.post_type = 'post'";
+		}
+
+		if ( ! empty( $post_type_object ) ) {
+			$edit_others_cap  = $post_type_object->cap->edit_others_posts;
+			$read_private_cap = $post_type_object->cap->read_private_posts;
+		} else {
+			$edit_others_cap  = 'edit_others_' . $post_type_cap . 's';
+			$read_private_cap = 'read_private_' . $post_type_cap . 's';
+		}
+
+		$user_id = get_current_user_id();
+
+		$q_status = array();
+		if ( ! empty( $this->query_vars['post_status'] ) ) {
+			$statuswheres = array();
+			$q_status     = $this->query_vars['post_status'];
+			if ( ! is_array( $q_status ) ) {
+				$q_status = explode( ',', $q_status );
+			}
+			$r_status = array();
+			$p_status = array();
+			$e_status = array();
+			if ( in_array( 'any', $q_status, true ) ) {
+				foreach ( get_post_stati( array( 'exclude_from_search' => true ) ) as $status ) {
+					if ( ! in_array( $status, $q_status, true ) ) {
+						$e_status[] = "{$wpdb->posts}.post_status <> '$status'";
+					}
+				}
+			} else {
+				foreach ( get_post_stati() as $status ) {
+					if ( in_array( $status, $q_status, true ) ) {
+						if ( 'private' === $status ) {
+							$p_status[] = "{$wpdb->posts}.post_status = '$status'";
+						} else {
+							$r_status[] = "{$wpdb->posts}.post_status = '$status'";
+						}
+					}
+				}
+			}
+
+			if ( empty( $this->query_vars['perm'] ) || 'readable' !== $this->query_vars['perm'] ) {
+				$r_status = array_merge( $r_status, $p_status );
+				unset( $p_status );
+			}
+
+			if ( ! empty( $e_status ) ) {
+				$statuswheres[] = '(' . implode( ' AND ', $e_status ) . ')';
+			}
+			if ( ! empty( $r_status ) ) {
+				if ( ! empty( $this->query_vars['perm'] ) && 'editable' === $this->query_vars['perm'] && ! current_user_can( $edit_others_cap ) ) {
+					$statuswheres[] = "({$wpdb->posts}.post_author = $user_id " . 'AND (' . implode( ' OR ', $r_status ) . '))';
+				} else {
+					$statuswheres[] = '(' . implode( ' OR ', $r_status ) . ')';
+				}
+			}
+			if ( ! empty( $p_status ) ) {
+				if ( ! empty( $this->query_vars['perm'] ) && 'readable' === $this->query_vars['perm'] && ! current_user_can( $read_private_cap ) ) {
+					$statuswheres[] = "({$wpdb->posts}.post_author = $user_id " . 'AND (' . implode( ' OR ', $p_status ) . '))';
+				} else {
+					$statuswheres[] = '(' . implode( ' OR ', $p_status ) . ')';
+				}
+			}
+			if ( $post_status_join ) {
+				$join .= " LEFT JOIN {$wpdb->posts} AS p2 ON ({$wpdb->posts}.post_parent = p2.ID) ";
+				foreach ( $statuswheres as $index => $statuswhere ) {
+					$statuswheres[ $index ] = "($statuswhere OR ({$wpdb->posts}.post_status = 'inherit' AND " . str_replace( $wpdb->posts, 'p2', $statuswhere ) . '))';
+				}
+			}
+			$where_status = implode( ' OR ', $statuswheres );
+			if ( ! empty( $where_status ) ) {
+				$where .= " AND ($where_status)";
+			}
+		} elseif ( ! $this->is_singular ) {
+			$where .= " AND ({$wpdb->posts}.post_status = 'publish'";
+
+			// Add public states.
+			$public_states = get_post_stati( array( 'public' => true ) );
+			foreach ( (array) $public_states as $state ) {
+				if ( 'publish' === $state ) { // Publish is hard-coded above.
+					continue;
+				}
+				$where .= " OR {$wpdb->posts}.post_status = '$state'";
+			}
+
+			if ( $this->is_admin ) {
+				// Add protected states that should show in the admin all list.
+				$admin_all_states = get_post_stati(
+					array(
+						'protected'              => true,
+						'show_in_admin_all_list' => true,
+					)
+				);
+				foreach ( (array) $admin_all_states as $state ) {
+					$where .= " OR {$wpdb->posts}.post_status = '$state'";
+				}
+			}
+
+			if ( is_user_logged_in() ) {
+				// Add private states that are limited to viewing by the author of a post or someone who has caps to read private states.
+				$private_states = get_post_stati( array( 'private' => true ) );
+				foreach ( (array) $private_states as $state ) {
+					$where .= current_user_can( $read_private_cap ) ? " OR {$wpdb->posts}.post_status = '$state'" : " OR {$wpdb->posts}.post_author = $user_id AND {$wpdb->posts}.post_status = '$state'";
+				}
+			}
+
+			$where .= ')';
 		}
 
 		return $where;
