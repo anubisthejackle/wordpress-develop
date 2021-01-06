@@ -3055,6 +3055,35 @@ class WP_Query {
 			$this->posts = apply_filters_ref_array( 'posts_results', array( $this->posts, &$this ) );
 		}
 
+		$this->process_comment_filters();
+
+		$this->verify_post_should_display($q_status);
+
+		$this->process_sticky_posts($page, $post_type);
+
+		if ( ! $q['suppress_filters'] ) {
+			/**
+			 * Filters the array of retrieved posts after they've been fetched and
+			 * internally processed.
+			 *
+			 * @since 1.5.0
+			 *
+			 * @param WP_Post[] $posts Array of post objects.
+			 * @param WP_Query  $this  The WP_Query instance (passed by reference).
+			 */
+			$this->posts = apply_filters_ref_array( 'the_posts', array( $this->posts, &$this ) );
+		}
+
+		$this->ensure_posts_are_wp_posts($post_type);
+
+		$this->handle_lazy_loading();
+
+		return $this->posts;
+	}
+
+	public function process_comment_filters() {
+		global $wpdb;
+
 		if ( ! empty( $this->posts ) && $this->is_comment_feed && $this->is_singular ) {
 			/** This filter is documented in wp-includes/query.php */
 			$cjoin = apply_filters_ref_array( 'comment_feed_join', array( '', &$this ) );
@@ -3080,29 +3109,6 @@ class WP_Query {
 			$this->comments      = array_map( 'get_comment', $comments );
 			$this->comment_count = count( $this->comments );
 		}
-
-		$this->verify_post_should_display($q_status);
-
-		$this->process_sticky_posts($page, $post_type);
-
-		if ( ! $q['suppress_filters'] ) {
-			/**
-			 * Filters the array of retrieved posts after they've been fetched and
-			 * internally processed.
-			 *
-			 * @since 1.5.0
-			 *
-			 * @param WP_Post[] $posts Array of post objects.
-			 * @param WP_Query  $this  The WP_Query instance (passed by reference).
-			 */
-			$this->posts = apply_filters_ref_array( 'the_posts', array( $this->posts, &$this ) );
-		}
-
-		$this->ensure_posts_are_wp_posts($post_type);
-
-		$this->handle_lazy_loading();
-
-		return $this->posts;
 	}
 
 	public function verify_post_should_display($q_status){
