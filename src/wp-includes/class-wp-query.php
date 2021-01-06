@@ -1893,6 +1893,22 @@ class WP_Query {
 		}
 	}
 
+	public function process_fields_for_get_posts(){
+		global $wpdb;
+		switch ( $this->query_vars['fields'] ) {
+			case 'ids':
+				$fields = "{$wpdb->posts}.ID";
+				break;
+			case 'id=>parent':
+				$fields = "{$wpdb->posts}.ID, {$wpdb->posts}.post_parent";
+				break;
+			default:
+				$fields = "{$wpdb->posts}.*";
+		}
+
+		return $fields;
+	}
+
 	/**
 	 * Retrieves an array of posts based on query variables.
 	 *
@@ -1928,16 +1944,7 @@ class WP_Query {
 		$this->process_query_vars_for_get_posts($q);
 		$post_type = $q['post_type'];
 
-		switch ( $q['fields'] ) {
-			case 'ids':
-				$fields = "{$wpdb->posts}.ID";
-				break;
-			case 'id=>parent':
-				$fields = "{$wpdb->posts}.ID, {$wpdb->posts}.post_parent";
-				break;
-			default:
-				$fields = "{$wpdb->posts}.*";
-		}
+		$fields = $this->process_fields_for_get_posts();
 
 		if ( '' !== $q['menu_order'] ) {
 			$where .= " AND {$wpdb->posts}.menu_order = " . $q['menu_order'];
