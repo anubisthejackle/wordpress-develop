@@ -2566,31 +2566,7 @@ class WP_Query {
 			$where .= ')';
 		}
 
-		/*
-		 * Apply filters on where and join prior to paging so that any
-		 * manipulations to them are reflected in the paging by day queries.
-		 */
-		if ( ! $q['suppress_filters'] ) {
-			/**
-			 * Filters the WHERE clause of the query.
-			 *
-			 * @since 1.5.0
-			 *
-			 * @param string   $where The WHERE clause of the query.
-			 * @param WP_Query $query The WP_Query instance (passed by reference).
-			 */
-			$where = apply_filters_ref_array( 'posts_where', array( $where, &$this ) );
-
-			/**
-			 * Filters the JOIN clause of the query.
-			 *
-			 * @since 1.5.0
-			 *
-			 * @param string   $join  The JOIN clause of the query.
-			 * @param WP_Query $query The WP_Query instance (passed by reference).
-			 */
-			$join = apply_filters_ref_array( 'posts_join', array( $join, &$this ) );
-		}
+		$this->apply_pagination_filters($where, $join);
 
 		// Paging.
 		if ( empty( $q['nopaging'] ) && ! $this->is_singular ) {
@@ -2955,6 +2931,35 @@ class WP_Query {
 		$this->handle_lazy_loading();
 
 		return $this->posts;
+	}
+
+	public function apply_pagination_filters(&$where, &$join){
+		/*
+		 * Apply filters on where and join prior to paging so that any
+		 * manipulations to them are reflected in the paging by day queries.
+		 */
+		if ( ! $this->query_vars['suppress_filters'] ) {
+			/**
+			 * Filters the WHERE clause of the query.
+			 *
+			 * @since 1.5.0
+			 *
+			 * @param string   $where The WHERE clause of the query.
+			 * @param WP_Query $this  The WP_Query instance (passed by reference).
+			 */
+			$where = apply_filters_ref_array( 'posts_where', array( $where, &$this ) );
+
+			/**
+			 * Filters the JOIN clause of the query.
+			 *
+			 * @since 1.5.0
+			 *
+			 * @param string   $join The JOIN clause of the query.
+			 * @param WP_Query $this The WP_Query instance (passed by reference).
+			 */
+			$join = apply_filters_ref_array( 'posts_join', array( $join, &$this ) );
+		}
+
 	}
 
 	public function handle_post_processing_of_retrieved_posts($page, $post_type, $q_status) {
