@@ -3081,6 +3081,33 @@ class WP_Query {
 			$this->comment_count = count( $this->comments );
 		}
 
+		$this->verify_post_should_display($q_status);
+
+		$this->process_sticky_posts($page, $post_type);
+
+		if ( ! $q['suppress_filters'] ) {
+			/**
+			 * Filters the array of retrieved posts after they've been fetched and
+			 * internally processed.
+			 *
+			 * @since 1.5.0
+			 *
+			 * @param WP_Post[] $posts Array of post objects.
+			 * @param WP_Query  $this  The WP_Query instance (passed by reference).
+			 */
+			$this->posts = apply_filters_ref_array( 'the_posts', array( $this->posts, &$this ) );
+		}
+
+		$this->ensure_posts_are_wp_posts($post_type);
+
+		$this->handle_lazy_loading();
+
+		return $this->posts;
+	}
+
+	public function verify_post_should_display($q_status){
+		$edit_cap = 'edit_post';
+		$read_cap = 'read_post';
 		// Check post status to determine if post should be displayed.
 		if ( ! empty( $this->posts ) && ( $this->is_single || $this->is_page ) ) {
 			$status = get_post_status( $this->posts[0] );
@@ -3138,27 +3165,6 @@ class WP_Query {
 				$this->posts[0] = get_post( apply_filters_ref_array( 'the_preview', array( $this->posts[0], &$this ) ) );
 			}
 		}
-
-		$this->process_sticky_posts($page, $post_type);
-
-		if ( ! $q['suppress_filters'] ) {
-			/**
-			 * Filters the array of retrieved posts after they've been fetched and
-			 * internally processed.
-			 *
-			 * @since 1.5.0
-			 *
-			 * @param WP_Post[] $posts Array of post objects.
-			 * @param WP_Query  $query The WP_Query instance (passed by reference).
-			 */
-			$this->posts = apply_filters_ref_array( 'the_posts', array( $this->posts, &$this ) );
-		}
-
-		$this->ensure_posts_are_wp_posts($post_type);
-
-		$this->handle_lazy_loading();
-
-		return $this->posts;
 	}
 
 	/**
