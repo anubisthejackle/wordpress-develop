@@ -1830,7 +1830,6 @@ class WP_Query {
 		$this->apply_pagination_filters();
 
 		$this->build_limits_for_get_posts();
-
 		$this->build_comments_for_get_posts();
 
 		$this->apply_post_paging_filters();
@@ -2132,8 +2131,6 @@ class WP_Query {
 	 * @return WP_Post[]|int[] Array of post objects or post IDs.
 	 */
 	public function get_posts() {
-		global $wpdb;
-
 		$this->pre_get_posts();
 
 		$this->build_request_for_get_posts();
@@ -2156,6 +2153,11 @@ class WP_Query {
 		 */
 		$this->posts = apply_filters_ref_array( 'posts_pre_query', array( null, &$this ) );
 
+		return $this->get_posts_from_query();
+
+	}
+
+	public function get_posts_from_query(){
 		if ( 'ids' === $this->query_vars['fields'] ) {
 			return $this->get_posts_ids();
 		}
