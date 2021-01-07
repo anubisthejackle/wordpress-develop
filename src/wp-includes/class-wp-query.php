@@ -1893,22 +1893,6 @@ class WP_Query {
 		}
 	}
 
-	public function process_fields_for_get_posts(){
-		global $wpdb;
-		switch ( $this->query_vars['fields'] ) {
-			case 'ids':
-				$fields = "{$wpdb->posts}.ID";
-				break;
-			case 'id=>parent':
-				$fields = "{$wpdb->posts}.ID, {$wpdb->posts}.post_parent";
-				break;
-			default:
-				$fields = "{$wpdb->posts}.*";
-		}
-
-		return $fields;
-	}
-
 	public function process_post_type_for_get_posts() {
 		// If we've got a post_type AND it's not "any" post_type.
 		if ( ! empty( $this->query_vars['post_type'] ) && 'any' !== $this->query_vars['post_type'] ) {
@@ -1933,7 +1917,7 @@ class WP_Query {
 		}
 	}
 
-	public function process_taxonomy_for_get_posts(&$join, &$where, &$groupby, &$post_type, &$post_status_join) {
+	public function process_taxonomy_for_get_posts(&$join, &$where, &$groupby, &$post_status_join) {
 		global $wpdb;
 
 		if ( ! $this->is_singular ) {
@@ -1947,24 +1931,24 @@ class WP_Query {
 
 		// Taxonomies.
 		if ( $this->is_tax ) {
-			if ( empty( $post_type ) ) {
+			if ( empty( $this->query_vars['post_type'] ) ) {
 				// Do a fully inclusive search for currently registered post types of queried taxonomies.
-				$post_type  = array();
+				$this->query_vars['post_type']  = array();
 				$taxonomies = array_keys( $this->tax_query->queried_terms );
 				foreach ( get_post_types( array( 'exclude_from_search' => false ) ) as $pt ) {
 					$object_taxonomies = 'attachment' === $pt ? get_taxonomies_for_attachments() : get_object_taxonomies( $pt );
 					if ( array_intersect( $taxonomies, $object_taxonomies ) ) {
-						$post_type[] = $pt;
+						$this->query_vars['post_type'][] = $pt;
 					}
 				}
-				if ( ! $post_type ) {
-					$post_type = 'any';
-				} elseif ( count( $post_type ) == 1 ) {
-					$post_type = $post_type[0];
+				if ( ! $this->query_vars['post_type'] ) {
+					$this->query_vars['post_type'] = 'any';
+				} elseif ( count( $this->query_vars['post_type'] ) == 1 ) {
+					$this->query_vars['post_type'] = $this->query_vars['post_type'][0];
 				}
 
 				$post_status_join = true;
-			} elseif ( in_array( 'attachment', (array) $post_type, true ) ) {
+			} elseif ( in_array( 'attachment', (array) $this->query_vars['post_type'], true ) ) {
 				$post_status_join = true;
 			}
 		}
@@ -2078,15 +2062,15 @@ class WP_Query {
 
 		$this->process_query_vars_for_get_posts($this->query_vars);
 
-		$post_type = $this->query_vars['post_type'];
+		$post_type = &$this->query_vars['post_type'];
 
 		$this->process_post_type_for_get_posts();
 		$this->process_attachments_for_get_posts();
-		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_type, $post_status_join);
+		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_status_join);
 		$this->process_author_for_get_posts();
 		$this->process_meta_queries_for_get_posts($join, $where);
 
-		$fields = $this->process_fields_for_get_posts();
+		$fields = $this->build_fields_for_get_posts();
 		$where = $this->build_where_for_get_posts($where, $post_type, $post_status_join, $join);
 		$orderby = $this->build_orderby_for_get_posts();
 
@@ -2826,6 +2810,22 @@ class WP_Query {
 		}
 
 		return $where;
+	}
+
+	public function build_fields_for_get_posts(){
+		global $wpdb;
+		switch ( $this->query_vars['fields'] ) {
+			case 'ids':
+				$fields = "{$wpdb->posts}.ID";
+				break;
+			case 'id=>parent':
+				$fields = "{$wpdb->posts}.ID, {$wpdb->posts}.post_parent";
+				break;
+			default:
+				$fields = "{$wpdb->posts}.*";
+		}
+
+		return $fields;
 	}
 
 	public function build_comments_for_get_posts(&$distinct, &$where, &$join) {
