@@ -2441,28 +2441,29 @@ class WP_Query {
 	}
 
 	public function build_where_for_get_posts(){
+
+		$this->add_comment_count_to_where();
+		$this->add_search_to_where();
+		$this->add_author_name_to_where();
+		$this->add_mime_type_to_where();
+		$this->add_page_id_to_where();
+		$this->add_post_name_to_where();
+		$this->add_title_to_where();
+		$this->add_menu_order_to_where();
+		$this->add_date_parameters_to_where();
+		$this->add_author_to_where();
+		$this->add_post_id_to_where();
+		$this->add_post_parent_to_where();
+		$this->add_post_password_parameters_to_where();
+		$this->add_comment_status_to_where();
+		$this->add_ping_status_to_where();
+		$this->add_post_type_parameters_to_where();
+		$this->add_post_status_parameters_to_where();
+
+	}
+
+	public function add_comment_count_to_where(){
 		global $wpdb;
-
-		$search = '';
-		$whichauthor = '';
-		$whichmimetype = '';
-
-		// If a search pattern is specified, load the posts that match.
-		if ( strlen( $this->query_vars['s'] ) ) {
-			$search = $this->parse_search( $this->query_vars );
-		}
-
-		if ( ! $this->query_vars['suppress_filters'] ) {
-			/**
-			 * Filters the search SQL that is used in the WHERE clause of WP_Query.
-			 *
-			 * @since 3.0.0
-			 *
-			 * @param string   $search Search SQL for WHERE clause.
-			 * @param WP_Query $this   The current WP_Query object.
-			 */
-			$search = apply_filters_ref_array( 'posts_search', array( $search, &$this ) );
-		}
 
 		// Matching by comment count.
 		if ( isset( $this->query_vars['comment_count'] ) ) {
@@ -2490,7 +2491,32 @@ class WP_Query {
 				$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.comment_count {$this->query_vars['comment_count']['compare']} %d", $this->query_vars['comment_count']['value'] );
 			}
 		}
+	}
 
+	public function add_search_to_where() {
+		$search = '';
+		if ( ! $this->query_vars['suppress_filters'] ) {
+			/**
+			 * Filters the search SQL that is used in the WHERE clause of WP_Query.
+			 *
+			 * @since 3.0.0
+			 *
+			 * @param string   $search Search SQL for WHERE clause.
+			 * @param WP_Query $this   The current WP_Query object.
+			 */
+			$search = apply_filters_ref_array( 'posts_search', array( $search, &$this ) );
+		}
+
+		// If a search pattern is specified, load the posts that match.
+		if ( strlen( $this->query_vars['s'] ) ) {
+			$search = $this->parse_search( $this->query_vars );
+		}
+
+		$this->request_parts['where'] .= $search;
+	}
+
+	public function add_author_name_to_where(){
+		global $wpdb;
 		// Author stuff for nice URLs.
 		if ( '' !== $this->query_vars['author_name'] ) {
 			if ( strpos( $this->query_vars['author_name'], '/' ) !== false ) {
@@ -2507,14 +2533,21 @@ class WP_Query {
 				$this->query_vars['author'] = $this->query_vars['author']->ID;
 			}
 			$whichauthor = " AND ({$wpdb->posts}.post_author = " . absint( $this->query_vars['author'] ) . ')';
+			$this->request_parts['where'] .= $whichauthor;
 		}
+	}
 
+	public function add_mime_type_to_where() {
+		global $wpdb;
 		// MIME-Type stuff for attachment browsing.
 		if ( isset( $this->query_vars['post_mime_type'] ) && '' !== $this->query_vars['post_mime_type'] ) {
 			$whichmimetype = wp_post_mime_type_where( $this->query_vars['post_mime_type'], $wpdb->posts );
+			$this->request_parts['where'] .= $whichmimetype;
 		}
+	}
 
-		$this->request_parts['where'] .= $search . $whichauthor . $whichmimetype;
+	public function add_page_id_to_where(){
+		global $wpdb;
 
 		if ( $this->query_vars['page_id'] ) {
 			if ( ( 'page' !== get_option( 'show_on_front' ) ) || ( get_option( 'page_for_posts' ) != $this->query_vars['page_id'] ) ) {
@@ -2522,6 +2555,10 @@ class WP_Query {
 				$this->request_parts['where']  = " AND {$wpdb->posts}.ID = " . $this->query_vars['page_id'];
 			}
 		}
+	}
+
+	public function add_post_name_to_where() {
+		global $wpdb;
 
 		// Parameters related to 'post_name'.
 		if ( '' !== $this->query_vars['name'] ) {
@@ -2577,37 +2614,26 @@ class WP_Query {
 			$post_name__in      = "'" . implode( "','", $this->query_vars['post_name__in'] ) . "'";
 			$this->request_parts['where']             .= " AND {$wpdb->posts}.post_name IN ($post_name__in)";
 		}
+	}
+
+	public function add_title_to_where() {
+		global $wpdb;
 
 		if ( '' !== $this->query_vars['title'] ) {
 			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_title = %s", stripslashes( $this->query_vars['title'] ) );
 		}
+	}
+
+	public function add_menu_order_to_where() {
+		global $wpdb;
 
 		if ( '' !== $this->query_vars['menu_order'] ) {
 			$this->request_parts['where'] .= " AND {$wpdb->posts}.menu_order = " . $this->query_vars['menu_order'];
 		}
+	}
 
-		// The "m" parameter is meant for months but accepts datetimes of varying specificity.
-		if ( $this->query_vars['m'] ) {
-			$this->request_parts['where'] .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 0, 4 );
-			if ( strlen( $this->query_vars['m'] ) > 5 ) {
-				$this->request_parts['where'] .= " AND MONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 4, 2 );
-			}
-			if ( strlen( $this->query_vars['m'] ) > 7 ) {
-				$this->request_parts['where'] .= " AND DAYOFMONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 6, 2 );
-			}
-			if ( strlen( $this->query_vars['m'] ) > 9 ) {
-				$this->request_parts['where'] .= " AND HOUR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 8, 2 );
-			}
-			if ( strlen( $this->query_vars['m'] ) > 11 ) {
-				$this->request_parts['where'] .= " AND MINUTE({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 10, 2 );
-			}
-			if ( strlen( $this->query_vars['m'] ) > 13 ) {
-				$this->request_parts['where'] .= " AND SECOND({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 12, 2 );
-			}
-		}
-
-		$this->add_date_parameters_to_where();
-
+	public function add_author_to_where() {
+		global $wpdb;
 		if ( ! empty( $this->query_vars['author__not_in'] ) ) {
 			$author__not_in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__not_in'] ) ) );
 			$this->request_parts['where']         .= " AND {$wpdb->posts}.post_author NOT IN ($author__not_in) ";
@@ -2615,7 +2641,10 @@ class WP_Query {
 			$author__in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__in'] ) ) );
 			$this->request_parts['where']     .= " AND {$wpdb->posts}.post_author IN ($author__in) ";
 		}
+	}
 
+	public function add_post_id_to_where() {
+		global $wpdb;
 		// If a post number is specified, load that post.
 		if ( $this->query_vars['p'] ) {
 			$this->request_parts['where'] .= " AND {$wpdb->posts}.ID = " . $this->query_vars['p'];
@@ -2626,6 +2655,10 @@ class WP_Query {
 			$post__not_in = implode( ',', array_map( 'absint', $this->query_vars['post__not_in'] ) );
 			$this->request_parts['where']       .= " AND {$wpdb->posts}.ID NOT IN ($post__not_in)";
 		}
+	}
+
+	public function add_post_parent_to_where() {
+		global $wpdb;
 
 		if ( is_numeric( $this->query_vars['post_parent'] ) ) {
 			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_parent = %d ", $this->query_vars['post_parent'] );
@@ -2636,7 +2669,10 @@ class WP_Query {
 			$post_parent__not_in = implode( ',', array_map( 'absint', $this->query_vars['post_parent__not_in'] ) );
 			$this->request_parts['where']              .= " AND {$wpdb->posts}.post_parent NOT IN ($post_parent__not_in)";
 		}
+	}
 
+	public function add_post_password_parameters_to_where() {
+		global $wpdb;
 		if ( isset( $this->query_vars['post_password'] ) ) {
 			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_password = %s", $this->query_vars['post_password'] );
 			if ( empty( $this->query_vars['perm'] ) ) {
@@ -2645,14 +2681,26 @@ class WP_Query {
 		} elseif ( isset( $this->query_vars['has_password'] ) ) {
 			$this->request_parts['where'] .= sprintf( " AND {$wpdb->posts}.post_password %s ''", $this->query_vars['has_password'] ? '!=' : '=' );
 		}
+	}
+
+	public function add_comment_status_to_where() {
+		global $wpdb;
 
 		if ( ! empty( $this->query_vars['comment_status'] ) ) {
 			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.comment_status = %s ", $this->query_vars['comment_status'] );
 		}
+	}
+
+	public function add_ping_status_to_where() {
+		global $wpdb;
 
 		if ( ! empty( $this->query_vars['ping_status'] ) ) {
 			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.ping_status = %s ", $this->query_vars['ping_status'] );
 		}
+	}
+
+	public function add_post_type_parameters_to_where(){
+		global $wpdb;
 
 		if ( 'any' === $this->query_vars['post_type'] ) {
 			$in_search_post_types = get_post_types( array( 'exclude_from_search' => false ) );
@@ -2672,6 +2720,10 @@ class WP_Query {
 		} else {
 			$this->request_parts['where'] .= " AND {$wpdb->posts}.post_type = 'post'";
 		}
+	}
+
+	public function add_post_status_parameters_to_where() {
+		global $wpdb;
 
 		$post_type_cap = null;
 		if ( is_array( $this->query_vars['post_type'] ) && count( $this->query_vars['post_type'] ) > 1 ) {
@@ -2793,10 +2845,31 @@ class WP_Query {
 
 			$this->request_parts['where'] .= ')';
 		}
-
 	}
 
 	public function add_date_parameters_to_where(){
+		global $wpdb;
+
+		// The "m" parameter is meant for months but accepts datetimes of varying specificity.
+		if ( $this->query_vars['m'] ) {
+			$this->request_parts['where'] .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 0, 4 );
+			if ( strlen( $this->query_vars['m'] ) > 5 ) {
+				$this->request_parts['where'] .= " AND MONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 4, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 7 ) {
+				$this->request_parts['where'] .= " AND DAYOFMONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 6, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 9 ) {
+				$this->request_parts['where'] .= " AND HOUR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 8, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 11 ) {
+				$this->request_parts['where'] .= " AND MINUTE({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 10, 2 );
+			}
+			if ( strlen( $this->query_vars['m'] ) > 13 ) {
+				$this->request_parts['where'] .= " AND SECOND({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 12, 2 );
+			}
+		}
+
 		// Handle the other individual date parameters.
 		$date_parameters = array();
 
