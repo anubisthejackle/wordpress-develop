@@ -84,6 +84,14 @@ class WP_Query {
 	public $request;
 
 	/**
+	 * Previous SQL for the database query.
+	 *
+	 * @since Unknown
+	 * @var string
+	 */
+	public $old_request;
+
+	/**
 	 * Different sections used to build request SQL.
 	 *
 	 * @since Unknown
@@ -1796,6 +1804,58 @@ class WP_Query {
 
 		$this->parse_meta_query();
 
+		// First let's clear some variables.
+		$this->request_parts = array(
+			'distinct' => '',
+			'where' => '',
+			'limits' => '',
+			'join' => '',
+			'groupby' => '',
+			'orderby' => '',
+			'found_rows' => '',
+			'post_status_join' => false,
+		);
+
+		$this->process_query_vars_for_get_posts($this->query_vars);
+		$this->process_post_type_for_get_posts();
+		$this->process_attachments_for_get_posts();
+		$this->process_taxonomy_for_get_posts();
+		$this->process_author_for_get_posts();
+		$this->process_meta_queries_for_get_posts();
+
+		$this->build_fields_for_get_posts();
+		$this->build_where_for_get_posts();
+		$this->build_orderby_for_get_posts();
+
+		$this->apply_pagination_filters();
+
+		$this->build_limits_for_get_posts();
+
+		$this->build_comments_for_get_posts();
+
+		$this->apply_post_paging_filters();
+
+		/**
+		 * Fires to announce the query's current selection parameters.
+		 *
+		 * For use by caching plugins.
+		 *
+		 * @since 2.3.0
+		 *
+		 * @param string $selection The assembled selection query.
+		 */
+		do_action( 'posts_selection', $this->request_parts['where'] . $this->request_parts['groupby'] . $this->request_parts['orderby'] . $this->request_parts['limits'] . $this->request_parts['join'] );
+
+		$this->process_caching_filters();
+
+		if ( ! empty( $this->request_parts['groupby'] ) ) {
+			$this->request_parts['groupby'] = 'GROUP BY ' . $this->request_parts['groupby'];
+		}
+
+		if ( ! $this->query_vars['no_found_rows'] && ! empty( $this->request_parts['limits'] ) ) {
+			$this->request_parts['found_rows'] = 'SQL_CALC_FOUND_ROWS';
+		}
+
 	}
 
 	public function process_query_vars_for_get_posts(&$q) {
@@ -1942,7 +2002,7 @@ class WP_Query {
 		}
 	}
 
-	public function process_taxonomy_for_get_posts(&$join, &$where, &$groupby) {
+	public function process_taxonomy_for_get_posts() {
 		global $wpdb;
 
 		if ( ! $this->is_singular ) {
@@ -1950,8 +2010,8 @@ class WP_Query {
 
 			$clauses = $this->tax_query->get_sql( $wpdb->posts, 'ID' );
 
-			$join  .= $clauses['join'];
-			$where .= $clauses['where'];
+			$this->request_parts['join']  .= $clauses['join'];
+			$this->request_parts['where'] .= $clauses['where'];
 		}
 
 		// Taxonomies.
@@ -2035,7 +2095,7 @@ class WP_Query {
 		}
 
 		if ( ! empty( $this->tax_query->queries ) || ! empty( $this->meta_query->queries ) ) {
-			$groupby = "{$wpdb->posts}.ID";
+			$this->request_parts['groupby'] = "{$wpdb->posts}.ID";
 		}
 
 	}
@@ -2076,75 +2136,7 @@ class WP_Query {
 
 		$this->pre_get_posts();
 
-		// First let's clear some variables.
-		$this->request_parts = array(
-			'distinct' => '',
-			'where' => '',
-			'limits' => '',
-			'join' => '',
-			'groupby' => '',
-			'post_status_join' => false,
-		);
-
-		$where            = &$this->request_parts['where'];
-		$join             = &$this->request_parts['join'];
-		$groupby          = &$this->request_parts['groupby'];
-
-		$this->process_query_vars_for_get_posts($this->query_vars);
-		$this->process_post_type_for_get_posts();
-		$this->process_attachments_for_get_posts();
-		$this->process_taxonomy_for_get_posts($join, $where, $groupby);
-		$this->process_author_for_get_posts();
-		$this->process_meta_queries_for_get_posts($join, $where);
-
-		$fields = $this->build_fields_for_get_posts();
-		$where = $this->build_where_for_get_posts($where, $join);
-		$orderby = $this->build_orderby_for_get_posts();
-
-		$this->apply_pagination_filters($where, $join);
-
-		$this->build_limits_for_get_posts();
-
-		$this->build_comments_for_get_posts($where, $join);
-
-		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $fields);
-
-		/**
-		 * Fires to announce the query's current selection parameters.
-		 *
-		 * For use by caching plugins.
-		 *
-		 * @since 2.3.0
-		 *
-		 * @param string $selection The assembled selection query.
-		 */
-		do_action( 'posts_selection', $where . $groupby . $orderby . $this->request_parts['limits'] . $join );
-
-		$this->process_caching_filters($where, $groupby, $join, $orderby, $fields);
-
-		if ( ! empty( $groupby ) ) {
-			$groupby = 'GROUP BY ' . $groupby;
-		}
-
-		$found_rows = '';
-		if ( ! $this->query_vars['no_found_rows'] && ! empty( $this->request_parts['limits'] ) ) {
-			$found_rows = 'SQL_CALC_FOUND_ROWS';
-		}
-
-		$old_request   = "SELECT $found_rows {$this->request_parts['distinct']} $fields FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby {$this->request_parts['limits']}";
-		$this->request = $old_request;
-
-		if ( ! $this->query_vars['suppress_filters'] ) {
-			/**
-			 * Filters the completed SQL query before sending.
-			 *
-			 * @since 2.0.0
-			 *
-			 * @param string   $request The complete SQL query.
-			 * @param WP_Query $query   The WP_Query instance (passed by reference).
-			 */
-			$this->request = apply_filters_ref_array( 'posts_request', array( $this->request, &$this ) );
-		}
+		$this->build_request_for_get_posts();
 
 		/**
 		 * Filters the posts array before the query takes place.
@@ -2173,8 +2165,8 @@ class WP_Query {
 		}
 
 		if ( null === $this->posts ) {
-			if ( $this->should_split_the_query($old_request, $fields) ) {
-				$this->get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby);
+			if ( $this->should_split_the_query() ) {
+				$this->get_posts_with_split_query();
 			} else {
 				$this->get_posts_with_default_query();
 			}
@@ -2186,10 +2178,29 @@ class WP_Query {
 		return $this->posts;
 	}
 
-	public function should_split_the_query($old_request, $fields){
+	public function build_request_for_get_posts() {
 		global $wpdb;
 
-		$split_the_query = ( $old_request == $this->request && "{$wpdb->posts}.*" === $fields && ! empty( $this->request_parts['limits'] ) && $this->query_vars['posts_per_page'] < 500 );
+		$this->old_request   = "SELECT {$this->request_parts['found_rows']} {$this->request_parts['distinct']} {$this->request_parts['fields']} FROM {$wpdb->posts} {$this->request_parts['join']} WHERE 1=1 {$this->request_parts['where']} {$this->request_parts['groupby']} {$this->request_parts['orderby']} {$this->request_parts['limits']}";
+		$this->request = $this->old_request;
+
+		if ( ! $this->query_vars['suppress_filters'] ) {
+			/**
+			 * Filters the completed SQL query before sending.
+			 *
+			 * @since 2.0.0
+			 *
+			 * @param string   $request The complete SQL query.
+			 * @param WP_Query $this    The WP_Query instance (passed by reference).
+			 */
+			$this->request = apply_filters_ref_array( 'posts_request', array( $this->request, &$this ) );
+		}
+	}
+
+	public function should_split_the_query(){
+		global $wpdb;
+
+		$split_the_query = ( $this->old_request == $this->request && "{$wpdb->posts}.*" === $this->request_parts['fields'] && ! empty( $this->request_parts['limits'] ) && $this->query_vars['posts_per_page'] < 500 );
 
 		/**
 		 * Filters whether to split the query.
@@ -2246,11 +2257,11 @@ class WP_Query {
 		return $r;
 	}
 
-	public function get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby){
+	public function get_posts_with_split_query(){
 		global $wpdb;
 
 		// First get the IDs and then fill in the objects.
-		$this->request = "SELECT $found_rows {$this->request_parts['distinct']} {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby {$this->request_parts['limits']}";
+		$this->request = "SELECT {$this->request_parts['found_rows']} {$this->request_parts['distinct']} {$wpdb->posts}.ID FROM {$wpdb->posts} {$this->request_parts['join']} WHERE 1=1 {$this->request_parts['where']} {$this->request_parts['groupby']} {$this->request_parts['orderby']} {$this->request_parts['limits']}";
 
 		/**
 		 * Filters the Post IDs SQL request before sending.
@@ -2281,13 +2292,13 @@ class WP_Query {
 		$this->set_found_posts( $this->query_vars, $this->request_parts['limits'] );
 	}
 
-	public function process_meta_queries_for_get_posts(&$join, &$where) {
+	public function process_meta_queries_for_get_posts() {
 		global $wpdb;
 
 		if ( ! empty( $this->meta_query->queries ) ) {
 			$clauses = $this->meta_query->get_sql( 'post', $wpdb->posts, 'ID', $this );
-			$join   .= $clauses['join'];
-			$where  .= $clauses['where'];
+			$this->request_parts['join']   .= $clauses['join'];
+			$this->request_parts['where']  .= $clauses['where'];
 		}
 	}
 
@@ -2398,7 +2409,7 @@ class WP_Query {
 			$orderby = 'ORDER BY ' . $orderby;
 		}
 
-		return $orderby;
+		$this->request_parts['orderby'] = $orderby;
 	}
 
 	public function build_post_type_object($post_type){
@@ -2427,7 +2438,7 @@ class WP_Query {
 
 	}
 
-	public function build_where_for_get_posts($where, &$join){
+	public function build_where_for_get_posts(){
 		global $wpdb;
 
 		$search = '';
@@ -2474,7 +2485,7 @@ class WP_Query {
 					$this->query_vars['comment_count']['compare'] = '=';
 				}
 
-				$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_count {$this->query_vars['comment_count']['compare']} %d", $this->query_vars['comment_count']['value'] );
+				$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.comment_count {$this->query_vars['comment_count']['compare']} %d", $this->query_vars['comment_count']['value'] );
 			}
 		}
 
@@ -2503,19 +2514,19 @@ class WP_Query {
 			$whichmimetype = wp_post_mime_type_where( $this->query_vars['post_mime_type'], $wpdb->posts );
 		}
 
-		$where .= $search . $whichauthor . $whichmimetype;
+		$this->request_parts['where'] .= $search . $whichauthor . $whichmimetype;
 
 		if ( $this->query_vars['page_id'] ) {
 			if ( ( 'page' !== get_option( 'show_on_front' ) ) || ( get_option( 'page_for_posts' ) != $this->query_vars['page_id'] ) ) {
 				$this->query_vars['p'] = $this->query_vars['page_id'];
-				$where  = " AND {$wpdb->posts}.ID = " . $this->query_vars['page_id'];
+				$this->request_parts['where']  = " AND {$wpdb->posts}.ID = " . $this->query_vars['page_id'];
 			}
 		}
 
 		// Parameters related to 'post_name'.
 		if ( '' !== $this->query_vars['name'] ) {
 			$this->query_vars['name'] = sanitize_title_for_query( $this->query_vars['name'] );
-			$where    .= " AND {$wpdb->posts}.post_name = '" . $this->query_vars['name'] . "'";
+			$this->request_parts['where']    .= " AND {$wpdb->posts}.post_name = '" . $this->query_vars['name'] . "'";
 		} elseif ( '' !== $this->query_vars['pagename'] ) {
 			if ( isset( $this->queried_object_id ) ) {
 				$reqpage = $this->queried_object_id;
@@ -2547,7 +2558,7 @@ class WP_Query {
 			if ( ( 'page' !== get_option( 'show_on_front' ) ) || empty( $page_for_posts ) || ( $reqpage != $page_for_posts ) ) {
 				$this->query_vars['pagename'] = sanitize_title_for_query( wp_basename( $this->query_vars['pagename'] ) );
 				$this->query_vars['name']     = $this->query_vars['pagename'];
-				$where        .= " AND ({$wpdb->posts}.ID = '$reqpage')";
+				$this->request_parts['where']        .= " AND ({$wpdb->posts}.ID = '$reqpage')";
 				$reqpage_obj   = get_post( $reqpage );
 				if ( is_object( $reqpage_obj ) && 'attachment' === $reqpage_obj->post_type ) {
 					$this->is_attachment = true;
@@ -2560,38 +2571,38 @@ class WP_Query {
 		} elseif ( '' !== $this->query_vars['attachment'] ) {
 			$this->query_vars['attachment'] = sanitize_title_for_query( wp_basename( $this->query_vars['attachment'] ) );
 			$this->query_vars['name']       = $this->query_vars['attachment'];
-			$where          .= " AND {$wpdb->posts}.post_name = '" . $this->query_vars['attachment'] . "'";
+			$this->request_parts['where']          .= " AND {$wpdb->posts}.post_name = '" . $this->query_vars['attachment'] . "'";
 		} elseif ( is_array( $this->query_vars['post_name__in'] ) && ! empty( $this->query_vars['post_name__in'] ) ) {
 			$this->query_vars['post_name__in'] = array_map( 'sanitize_title_for_query', $this->query_vars['post_name__in'] );
 			$post_name__in      = "'" . implode( "','", $this->query_vars['post_name__in'] ) . "'";
-			$where             .= " AND {$wpdb->posts}.post_name IN ($post_name__in)";
+			$this->request_parts['where']             .= " AND {$wpdb->posts}.post_name IN ($post_name__in)";
 		}
 
 		if ( '' !== $this->query_vars['title'] ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_title = %s", stripslashes( $this->query_vars['title'] ) );
+			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_title = %s", stripslashes( $this->query_vars['title'] ) );
 		}
 
 		if ( '' !== $this->query_vars['menu_order'] ) {
-			$where .= " AND {$wpdb->posts}.menu_order = " . $this->query_vars['menu_order'];
+			$this->request_parts['where'] .= " AND {$wpdb->posts}.menu_order = " . $this->query_vars['menu_order'];
 		}
 
 		// The "m" parameter is meant for months but accepts datetimes of varying specificity.
 		if ( $this->query_vars['m'] ) {
-			$where .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 0, 4 );
+			$this->request_parts['where'] .= " AND YEAR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 0, 4 );
 			if ( strlen( $this->query_vars['m'] ) > 5 ) {
-				$where .= " AND MONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 4, 2 );
+				$this->request_parts['where'] .= " AND MONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 4, 2 );
 			}
 			if ( strlen( $this->query_vars['m'] ) > 7 ) {
-				$where .= " AND DAYOFMONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 6, 2 );
+				$this->request_parts['where'] .= " AND DAYOFMONTH({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 6, 2 );
 			}
 			if ( strlen( $this->query_vars['m'] ) > 9 ) {
-				$where .= " AND HOUR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 8, 2 );
+				$this->request_parts['where'] .= " AND HOUR({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 8, 2 );
 			}
 			if ( strlen( $this->query_vars['m'] ) > 11 ) {
-				$where .= " AND MINUTE({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 10, 2 );
+				$this->request_parts['where'] .= " AND MINUTE({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 10, 2 );
 			}
 			if ( strlen( $this->query_vars['m'] ) > 13 ) {
-				$where .= " AND SECOND({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 12, 2 );
+				$this->request_parts['where'] .= " AND SECOND({$wpdb->posts}.post_date)=" . substr( $this->query_vars['m'], 12, 2 );
 			}
 		}
 
@@ -2628,79 +2639,79 @@ class WP_Query {
 
 		if ( $date_parameters ) {
 			$date_query = new WP_Date_Query( array( $date_parameters ) );
-			$where     .= $date_query->get_sql();
+			$this->request_parts['where']     .= $date_query->get_sql();
 		}
 		unset( $date_parameters, $date_query );
 
 		// Handle complex date queries.
 		if ( ! empty( $this->query_vars['date_query'] ) ) {
 			$this->date_query = new WP_Date_Query( $this->query_vars['date_query'] );
-			$where           .= $this->date_query->get_sql();
+			$this->request_parts['where']           .= $this->date_query->get_sql();
 		}
 
 		if ( ! empty( $this->query_vars['author__not_in'] ) ) {
 			$author__not_in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__not_in'] ) ) );
-			$where         .= " AND {$wpdb->posts}.post_author NOT IN ($author__not_in) ";
+			$this->request_parts['where']         .= " AND {$wpdb->posts}.post_author NOT IN ($author__not_in) ";
 		} elseif ( ! empty( $this->query_vars['author__in'] ) ) {
 			$author__in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__in'] ) ) );
-			$where     .= " AND {$wpdb->posts}.post_author IN ($author__in) ";
+			$this->request_parts['where']     .= " AND {$wpdb->posts}.post_author IN ($author__in) ";
 		}
 
 		// If a post number is specified, load that post.
 		if ( $this->query_vars['p'] ) {
-			$where .= " AND {$wpdb->posts}.ID = " . $this->query_vars['p'];
+			$this->request_parts['where'] .= " AND {$wpdb->posts}.ID = " . $this->query_vars['p'];
 		} elseif ( $this->query_vars['post__in'] ) {
 			$post__in = implode( ',', array_map( 'absint', $this->query_vars['post__in'] ) );
-			$where   .= " AND {$wpdb->posts}.ID IN ($post__in)";
+			$this->request_parts['where']   .= " AND {$wpdb->posts}.ID IN ($post__in)";
 		} elseif ( $this->query_vars['post__not_in'] ) {
 			$post__not_in = implode( ',', array_map( 'absint', $this->query_vars['post__not_in'] ) );
-			$where       .= " AND {$wpdb->posts}.ID NOT IN ($post__not_in)";
+			$this->request_parts['where']       .= " AND {$wpdb->posts}.ID NOT IN ($post__not_in)";
 		}
 
 		if ( is_numeric( $this->query_vars['post_parent'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_parent = %d ", $this->query_vars['post_parent'] );
+			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_parent = %d ", $this->query_vars['post_parent'] );
 		} elseif ( $this->query_vars['post_parent__in'] ) {
 			$post_parent__in = implode( ',', array_map( 'absint', $this->query_vars['post_parent__in'] ) );
-			$where          .= " AND {$wpdb->posts}.post_parent IN ($post_parent__in)";
+			$this->request_parts['where']          .= " AND {$wpdb->posts}.post_parent IN ($post_parent__in)";
 		} elseif ( $this->query_vars['post_parent__not_in'] ) {
 			$post_parent__not_in = implode( ',', array_map( 'absint', $this->query_vars['post_parent__not_in'] ) );
-			$where              .= " AND {$wpdb->posts}.post_parent NOT IN ($post_parent__not_in)";
+			$this->request_parts['where']              .= " AND {$wpdb->posts}.post_parent NOT IN ($post_parent__not_in)";
 		}
 
 		if ( isset( $this->query_vars['post_password'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_password = %s", $this->query_vars['post_password'] );
+			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_password = %s", $this->query_vars['post_password'] );
 			if ( empty( $this->query_vars['perm'] ) ) {
 				$this->query_vars['perm'] = 'readable';
 			}
 		} elseif ( isset( $this->query_vars['has_password'] ) ) {
-			$where .= sprintf( " AND {$wpdb->posts}.post_password %s ''", $this->query_vars['has_password'] ? '!=' : '=' );
+			$this->request_parts['where'] .= sprintf( " AND {$wpdb->posts}.post_password %s ''", $this->query_vars['has_password'] ? '!=' : '=' );
 		}
 
 		if ( ! empty( $this->query_vars['comment_status'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_status = %s ", $this->query_vars['comment_status'] );
+			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.comment_status = %s ", $this->query_vars['comment_status'] );
 		}
 
 		if ( ! empty( $this->query_vars['ping_status'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.ping_status = %s ", $this->query_vars['ping_status'] );
+			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.ping_status = %s ", $this->query_vars['ping_status'] );
 		}
 
 		if ( 'any' === $this->query_vars['post_type'] ) {
 			$in_search_post_types = get_post_types( array( 'exclude_from_search' => false ) );
 			if ( empty( $in_search_post_types ) ) {
-				$where .= ' AND 1=0 ';
+				$this->request_parts['where'] .= ' AND 1=0 ';
 			} else {
-				$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", array_map( 'esc_sql', $in_search_post_types ) ) . "')";
+				$this->request_parts['where'] .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", array_map( 'esc_sql', $in_search_post_types ) ) . "')";
 			}
 		} elseif ( ! empty( $this->query_vars['post_type'] ) && is_array( $this->query_vars['post_type'] ) ) {
-			$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", esc_sql( $this->query_vars['post_type'] ) ) . "')";
+			$this->request_parts['where'] .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", esc_sql( $this->query_vars['post_type'] ) ) . "')";
 		} elseif ( ! empty( $this->query_vars['post_type'] ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_type = %s", $this->query_vars['post_type'] );
+			$this->request_parts['where'] .= $wpdb->prepare( " AND {$wpdb->posts}.post_type = %s", $this->query_vars['post_type'] );
 		} elseif ( $this->is_attachment ) {
-			$where .= " AND {$wpdb->posts}.post_type = 'attachment'";
+			$this->request_parts['where'] .= " AND {$wpdb->posts}.post_type = 'attachment'";
 		} elseif ( $this->is_page ) {
-			$where .= " AND {$wpdb->posts}.post_type = 'page'";
+			$this->request_parts['where'] .= " AND {$wpdb->posts}.post_type = 'page'";
 		} else {
-			$where .= " AND {$wpdb->posts}.post_type = 'post'";
+			$this->request_parts['where'] .= " AND {$wpdb->posts}.post_type = 'post'";
 		}
 
 		$post_type_cap = null;
@@ -2779,17 +2790,17 @@ class WP_Query {
 				}
 			}
 			if ( $this->request_parts['post_status_join'] ) {
-				$join .= " LEFT JOIN {$wpdb->posts} AS p2 ON ({$wpdb->posts}.post_parent = p2.ID) ";
+				$this->request_parts['join'] .= " LEFT JOIN {$wpdb->posts} AS p2 ON ({$wpdb->posts}.post_parent = p2.ID) ";
 				foreach ( $statuswheres as $index => $statuswhere ) {
 					$statuswheres[ $index ] = "($statuswhere OR ({$wpdb->posts}.post_status = 'inherit' AND " . str_replace( $wpdb->posts, 'p2', $statuswhere ) . '))';
 				}
 			}
 			$where_status = implode( ' OR ', $statuswheres );
 			if ( ! empty( $where_status ) ) {
-				$where .= " AND ($where_status)";
+				$this->request_parts['where'] .= " AND ($where_status)";
 			}
 		} elseif ( ! $this->is_singular ) {
-			$where .= " AND ({$wpdb->posts}.post_status = 'publish'";
+			$this->request_parts['where'] .= " AND ({$wpdb->posts}.post_status = 'publish'";
 
 			// Add public states.
 			$public_states = get_post_stati( array( 'public' => true ) );
@@ -2797,7 +2808,7 @@ class WP_Query {
 				if ( 'publish' === $state ) { // Publish is hard-coded above.
 					continue;
 				}
-				$where .= " OR {$wpdb->posts}.post_status = '$state'";
+				$this->request_parts['where'] .= " OR {$wpdb->posts}.post_status = '$state'";
 			}
 
 			if ( $this->is_admin ) {
@@ -2809,7 +2820,7 @@ class WP_Query {
 					)
 				);
 				foreach ( (array) $admin_all_states as $state ) {
-					$where .= " OR {$wpdb->posts}.post_status = '$state'";
+					$this->request_parts['where'] .= " OR {$wpdb->posts}.post_status = '$state'";
 				}
 			}
 
@@ -2817,14 +2828,14 @@ class WP_Query {
 				// Add private states that are limited to viewing by the author of a post or someone who has caps to read private states.
 				$private_states = get_post_stati( array( 'private' => true ) );
 				foreach ( (array) $private_states as $state ) {
-					$where .= current_user_can( $read_private_cap ) ? " OR {$wpdb->posts}.post_status = '$state'" : " OR {$wpdb->posts}.post_author = $user_id AND {$wpdb->posts}.post_status = '$state'";
+					$this->request_parts['where'] .= current_user_can( $read_private_cap ) ? " OR {$wpdb->posts}.post_status = '$state'" : " OR {$wpdb->posts}.post_author = $user_id AND {$wpdb->posts}.post_status = '$state'";
 				}
 			}
 
-			$where .= ')';
+			$this->request_parts['where'] .= ')';
 		}
 
-		return $where;
+		return $this->request_parts['where'];
 	}
 
 	public function build_fields_for_get_posts(){
@@ -2840,17 +2851,17 @@ class WP_Query {
 				$fields = "{$wpdb->posts}.*";
 		}
 
-		return $fields;
+		$this->request_parts['fields'] = $fields;
 	}
 
-	public function build_comments_for_get_posts(&$where, &$join) {
+	public function build_comments_for_get_posts() {
 		global $wpdb;
 
 		// Comments feeds.
 		if ( $this->is_comment_feed && ! $this->is_singular ) {
 			if ( $this->is_archive || $this->is_search ) {
-				$cjoin    = "JOIN {$wpdb->posts} ON ({$wpdb->comments}.comment_post_ID = {$wpdb->posts}.ID) $join ";
-				$cwhere   = "WHERE comment_approved = '1' $where";
+				$cjoin    = "JOIN {$wpdb->posts} ON ({$wpdb->comments}.comment_post_ID = {$wpdb->posts}.ID) {$this->request_parts['join']} ";
+				$cwhere   = "WHERE comment_approved = '1' {$this->request_parts['where']}";
 				$cgroupby = "{$wpdb->comments}.comment_id";
 			} else { // Other non-singular, e.g. front.
 				$cjoin    = "JOIN {$wpdb->posts} ON ( {$wpdb->comments}.comment_post_ID = {$wpdb->posts}.ID )";
@@ -2927,17 +2938,17 @@ class WP_Query {
 			}
 
 			$post_ids = implode( ',', $post_ids );
-			$join     = '';
+			$this->request_parts['join']     = '';
 			if ( $post_ids ) {
-				$where = "AND {$wpdb->posts}.ID IN ($post_ids) ";
+				$this->request_parts['where'] = "AND {$wpdb->posts}.ID IN ($post_ids) ";
 			} else {
-				$where = 'AND 0';
+				$this->request_parts['where'] = 'AND 0';
 			}
 		}
 	}
 
-	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$fields){
-				/*
+	public function process_caching_filters(){
+		/*
 		 * Filters again for the benefit of caching plugins.
 		 * Regular plugins should use the hooks above.
 		 */
@@ -2952,7 +2963,7 @@ class WP_Query {
 			 * @param string   $where The WHERE clause of the query.
 			 * @param WP_Query $this  The WP_Query instance (passed by reference).
 			 */
-			$where = apply_filters_ref_array( 'posts_where_request', array( $where, &$this ) );
+			$where = apply_filters_ref_array( 'posts_where_request', array( $this->request_parts['where'], &$this ) );
 
 			/**
 			 * Filters the GROUP BY clause of the query.
@@ -2964,7 +2975,7 @@ class WP_Query {
 			 * @param string   $groupby The GROUP BY clause of the query.
 			 * @param WP_Query $this    The WP_Query instance (passed by reference).
 			 */
-			$groupby = apply_filters_ref_array( 'posts_groupby_request', array( $groupby, &$this ) );
+			$groupby = apply_filters_ref_array( 'posts_groupby_request', array( $this->request_parts['groupby'], &$this ) );
 
 			/**
 			 * Filters the JOIN clause of the query.
@@ -2976,7 +2987,7 @@ class WP_Query {
 			 * @param string   $join The JOIN clause of the query.
 			 * @param WP_Query $this The WP_Query instance (passed by reference).
 			 */
-			$join = apply_filters_ref_array( 'posts_join_request', array( $join, &$this ) );
+			$join = apply_filters_ref_array( 'posts_join_request', array( $this->request_parts['join'], &$this ) );
 
 			/**
 			 * Filters the ORDER BY clause of the query.
@@ -2988,7 +2999,7 @@ class WP_Query {
 			 * @param string   $orderby The ORDER BY clause of the query.
 			 * @param WP_Query $this    The WP_Query instance (passed by reference).
 			 */
-			$orderby = apply_filters_ref_array( 'posts_orderby_request', array( $orderby, &$this ) );
+			$orderby = apply_filters_ref_array( 'posts_orderby_request', array( $this->request_parts['orderby'], &$this ) );
 
 			/**
 			 * Filters the DISTINCT clause of the query.
@@ -3012,7 +3023,7 @@ class WP_Query {
 			 * @param string   $fields The SELECT clause of the query.
 			 * @param WP_Query $this   The WP_Query instance (passed by reference).
 			 */
-			$fields = apply_filters_ref_array( 'posts_fields_request', array( $fields, &$this ) );
+			$fields = apply_filters_ref_array( 'posts_fields_request', array( $this->request_parts['fields'], &$this ) );
 
 			/**
 			 * Filters the LIMIT clause of the query.
@@ -3042,18 +3053,18 @@ class WP_Query {
 			 */
 			$clauses = (array) apply_filters_ref_array( 'posts_clauses_request', array( compact( $pieces ), &$this ) );
 
-			$where    = isset( $clauses['where'] ) ? $clauses['where'] : '';
-			$groupby  = isset( $clauses['groupby'] ) ? $clauses['groupby'] : '';
-			$join     = isset( $clauses['join'] ) ? $clauses['join'] : '';
-			$orderby  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
+			$this->request_parts['where']    = isset( $clauses['where'] ) ? $clauses['where'] : '';
+			$this->request_parts['groupby']  = isset( $clauses['groupby'] ) ? $clauses['groupby'] : '';
+			$this->request_parts['join']     = isset( $clauses['join'] ) ? $clauses['join'] : '';
+			$this->request_parts['orderby']  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
 			$this->request_parts['distinct'] = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
-			$fields   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
+			$this->request_parts['fields']   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
 			$this->request_parts['limits']   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
 		}
 
 	}
 
-	public function apply_pagination_filters(&$where, &$join){
+	public function apply_pagination_filters(){
 		/*
 		 * Apply filters on where and join prior to paging so that any
 		 * manipulations to them are reflected in the paging by day queries.
@@ -3067,7 +3078,7 @@ class WP_Query {
 			 * @param string   $where The WHERE clause of the query.
 			 * @param WP_Query $this  The WP_Query instance (passed by reference).
 			 */
-			$where = apply_filters_ref_array( 'posts_where', array( $where, &$this ) );
+			$this->request_parts['where'] = apply_filters_ref_array( 'posts_where', array( $this->request_parts['where'], &$this ) );
 
 			/**
 			 * Filters the JOIN clause of the query.
@@ -3077,7 +3088,7 @@ class WP_Query {
 			 * @param string   $join The JOIN clause of the query.
 			 * @param WP_Query $this The WP_Query instance (passed by reference).
 			 */
-			$join = apply_filters_ref_array( 'posts_join', array( $join, &$this ) );
+			$this->request_parts['join'] = apply_filters_ref_array( 'posts_join', array( $this->request_parts['join'], &$this ) );
 		}
 
 	}
@@ -3124,7 +3135,7 @@ class WP_Query {
 
 	}
 
-	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$fields) {
+	public function apply_post_paging_filters() {
 
 		/*
 		 * Apply post-paging filters on where and join. Only plugins that
@@ -3144,7 +3155,7 @@ class WP_Query {
 		 * @param string   $where The WHERE clause of the query.
 		 * @param WP_Query $this  The WP_Query instance (passed by reference).
 		 */
-		$where = apply_filters_ref_array( 'posts_where_paged', array( $where, &$this ) );
+		$where = apply_filters_ref_array( 'posts_where_paged', array( $this->request_parts['where'], &$this ) );
 
 		/**
 		 * Filters the GROUP BY clause of the query.
@@ -3154,7 +3165,7 @@ class WP_Query {
 		 * @param string   $groupby The GROUP BY clause of the query.
 		 * @param WP_Query $this    The WP_Query instance (passed by reference).
 		 */
-		$groupby = apply_filters_ref_array( 'posts_groupby', array( $groupby, &$this ) );
+		$groupby = apply_filters_ref_array( 'posts_groupby', array( $this->request_parts['groupby'], &$this ) );
 
 		/**
 		 * Filters the JOIN clause of the query.
@@ -3166,7 +3177,7 @@ class WP_Query {
 		 * @param string   $join The JOIN clause of the query.
 		 * @param WP_Query $this The WP_Query instance (passed by reference).
 		 */
-		$join = apply_filters_ref_array( 'posts_join_paged', array( $join, &$this ) );
+		$join = apply_filters_ref_array( 'posts_join_paged', array( $this->request_parts['join'], &$this ) );
 
 		/**
 		 * Filters the ORDER BY clause of the query.
@@ -3176,7 +3187,7 @@ class WP_Query {
 		 * @param string   $orderby The ORDER BY clause of the query.
 		 * @param WP_Query $this    The WP_Query instance (passed by reference).
 		 */
-		$orderby = apply_filters_ref_array( 'posts_orderby', array( $orderby, &$this ) );
+		$orderby = apply_filters_ref_array( 'posts_orderby', array( $this->request_parts['orderby'], &$this ) );
 
 		/**
 		 * Filters the DISTINCT clause of the query.
@@ -3206,7 +3217,7 @@ class WP_Query {
 		 * @param string   $fields The SELECT clause of the query.
 		 * @param WP_Query $this   The WP_Query instance (passed by reference).
 		 */
-		$fields = apply_filters_ref_array( 'posts_fields', array( $fields, &$this ) );
+		$fields = apply_filters_ref_array( 'posts_fields', array( $this->request_parts['fields'], &$this ) );
 
 		$pieces = array( 'where', 'groupby', 'join', 'orderby', 'distinct', 'fields', 'limits' );
 		/**
@@ -3222,12 +3233,12 @@ class WP_Query {
 		 */
 		$clauses = (array) apply_filters_ref_array( 'posts_clauses', array( compact( $pieces ), &$this ) );
 
-		$where    = isset( $clauses['where'] ) ? $clauses['where'] : '';
-		$groupby  = isset( $clauses['groupby'] ) ? $clauses['groupby'] : '';
-		$join     = isset( $clauses['join'] ) ? $clauses['join'] : '';
-		$orderby  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
+		$this->request_parts['where']    = isset( $clauses['where'] ) ? $clauses['where'] : '';
+		$this->request_parts['groupby']  = isset( $clauses['groupby'] ) ? $clauses['groupby'] : '';
+		$this->request_parts['join']     = isset( $clauses['join'] ) ? $clauses['join'] : '';
+		$this->request_parts['orderby']  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
 		$this->request_parts['distinct'] = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
-		$fields   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
+		$this->request_parts['fields']   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
 		$this->request_parts['limits']   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
 
 	}
