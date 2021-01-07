@@ -2060,9 +2060,6 @@ class WP_Query {
 
 		$this->pre_get_posts();
 
-		// Shorthand.
-		$q = &$this->query_vars;
-
 		// First let's clear some variables.
 		$distinct         = '';
 		$where            = '';
@@ -2072,16 +2069,16 @@ class WP_Query {
 		$post_status_join = false;
 		$page             = 1;
 
-		$this->process_query_vars_for_get_posts($q);
-		$post_type = $q['post_type'];
+		$this->process_query_vars_for_get_posts($this->query_vars);
+		$post_type = $this->query_vars['post_type'];
 
 		$fields = $this->process_fields_for_get_posts();
 
 		$this->process_post_type_for_get_posts();
 
 		// If an attachment is requested by number, let it supersede any post number.
-		if ( $q['attachment_id'] ) {
-			$q['p'] = absint( $q['attachment_id'] );
+		if ( $this->query_vars['attachment_id'] ) {
+			$this->query_vars['p'] = absint( $this->query_vars['attachment_id'] );
 		}
 
 		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_type, $post_status_join);
@@ -2128,14 +2125,14 @@ class WP_Query {
 		}
 
 		$found_rows = '';
-		if ( ! $q['no_found_rows'] && ! empty( $limits ) ) {
+		if ( ! $this->query_vars['no_found_rows'] && ! empty( $limits ) ) {
 			$found_rows = 'SQL_CALC_FOUND_ROWS';
 		}
 
 		$old_request   = "SELECT $found_rows $distinct $fields FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
 		$this->request = $old_request;
 
-		if ( ! $q['suppress_filters'] ) {
+		if ( ! $this->query_vars['suppress_filters'] ) {
 			/**
 			 * Filters the completed SQL query before sending.
 			 *
@@ -2165,17 +2162,15 @@ class WP_Query {
 		 */
 		$this->posts = apply_filters_ref_array( 'posts_pre_query', array( null, &$this ) );
 
-		if ( 'ids' === $q['fields'] ) {
+		if ( 'ids' === $this->query_vars['fields'] ) {
 			return $this->get_posts_ids($limits);
 		}
 
-		if ( 'id=>parent' === $q['fields'] ) {
+		if ( 'id=>parent' === $this->query_vars['fields'] ) {
 			return $this->get_posts_ids_with_parents($limits);
 		}
 
 		if ( null === $this->posts ) {
-
-
 			if ( $this->should_split_the_query($old_request, $fields, $limits) ) {
 				$this->get_posts_with_split_query($found_rows, $distinct, $join, $where, $groupby, $orderby, $limits);
 			} else {
