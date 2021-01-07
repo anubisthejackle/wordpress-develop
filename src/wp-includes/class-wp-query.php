@@ -2174,23 +2174,9 @@ class WP_Query {
 		}
 
 		if ( null === $this->posts ) {
-			$split_the_query = ( $old_request == $this->request && "{$wpdb->posts}.*" === $fields && ! empty( $limits ) && $q['posts_per_page'] < 500 );
 
-			/**
-			 * Filters whether to split the query.
-			 *
-			 * Splitting the query will cause it to fetch just the IDs of the found posts
-			 * (and then individually fetch each post by ID), rather than fetching every
-			 * complete row at once. One massive result vs. many small results.
-			 *
-			 * @since 3.4.0
-			 *
-			 * @param bool     $split_the_query Whether or not to split the query.
-			 * @param WP_Query $query           The WP_Query instance.
-			 */
-			$split_the_query = apply_filters( 'split_the_query', $split_the_query, $this );
 
-			if ( $split_the_query ) {
+			if ( $this->should_split_the_query($old_request, $fields, $limits) ) {
 				$this->get_posts_with_split_query($found_rows, $distinct, $join, $where, $groupby, $orderby, $limits);
 			} else {
 				$this->get_posts_with_default_query($limits);
@@ -2201,6 +2187,28 @@ class WP_Query {
 		$this->handle_lazy_loading();
 
 		return $this->posts;
+	}
+
+	public function should_split_the_query($old_request, $fields, $limits){
+		global $wpdb;
+
+		$split_the_query = ( $old_request == $this->request && "{$wpdb->posts}.*" === $fields && ! empty( $limits ) && $this->query_vars['posts_per_page'] < 500 );
+
+		/**
+		 * Filters whether to split the query.
+		 *
+		 * Splitting the query will cause it to fetch just the IDs of the found posts
+		 * (and then individually fetch each post by ID), rather than fetching every
+		 * complete row at once. One massive result vs. many small results.
+		 *
+		 * @since 3.4.0
+		 *
+		 * @param bool     $split_the_query Whether or not to split the query.
+		 * @param WP_Query $this            The WP_Query instance.
+		 */
+		$split_the_query = apply_filters( 'split_the_query', $split_the_query, $this );
+
+		return ($split_the_query) ? true : false;
 	}
 
 	public function get_posts_ids($limits) {
