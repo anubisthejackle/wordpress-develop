@@ -2086,7 +2086,6 @@ class WP_Query {
 			'post_status_join' => false,
 		);
 
-		$distinct         = &$this->request_parts['distinct'];
 		$where            = &$this->request_parts['where'];
 		$limits           = &$this->request_parts['limits'];
 		$join             = &$this->request_parts['join'];
@@ -2108,9 +2107,9 @@ class WP_Query {
 
 		$limits = $this->build_limits_for_get_posts();
 
-		$this->build_comments_for_get_posts($distinct, $where, $join);
+		$this->build_comments_for_get_posts($where, $join);
 
-		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $distinct, $limits, $fields);
+		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $limits, $fields);
 
 		/**
 		 * Fires to announce the query's current selection parameters.
@@ -2123,7 +2122,7 @@ class WP_Query {
 		 */
 		do_action( 'posts_selection', $where . $groupby . $orderby . $limits . $join );
 
-		$this->process_caching_filters($where, $groupby, $join, $orderby, $distinct, $fields, $limits);
+		$this->process_caching_filters($where, $groupby, $join, $orderby, $fields, $limits);
 
 		if ( ! empty( $groupby ) ) {
 			$groupby = 'GROUP BY ' . $groupby;
@@ -2134,7 +2133,7 @@ class WP_Query {
 			$found_rows = 'SQL_CALC_FOUND_ROWS';
 		}
 
-		$old_request   = "SELECT $found_rows $distinct $fields FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
+		$old_request   = "SELECT $found_rows {$this->request_parts['distinct']} $fields FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
 		$this->request = $old_request;
 
 		if ( ! $this->query_vars['suppress_filters'] ) {
@@ -2177,7 +2176,7 @@ class WP_Query {
 
 		if ( null === $this->posts ) {
 			if ( $this->should_split_the_query($old_request, $fields, $limits) ) {
-				$this->get_posts_with_split_query($found_rows, $distinct, $join, $where, $groupby, $orderby, $limits);
+				$this->get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby, $limits);
 			} else {
 				$this->get_posts_with_default_query($limits);
 			}
@@ -2249,11 +2248,11 @@ class WP_Query {
 		return $r;
 	}
 
-	public function get_posts_with_split_query($found_rows, $distinct, $join, $where, $groupby, $orderby, $limits){
+	public function get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby, $limits){
 		global $wpdb;
 
 		// First get the IDs and then fill in the objects.
-		$this->request = "SELECT $found_rows $distinct {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
+		$this->request = "SELECT $found_rows {$this->request_parts['distinct']} {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
 
 		/**
 		 * Filters the Post IDs SQL request before sending.
@@ -2847,7 +2846,7 @@ class WP_Query {
 		return $fields;
 	}
 
-	public function build_comments_for_get_posts(&$distinct, &$where, &$join) {
+	public function build_comments_for_get_posts(&$where, &$join) {
 		global $wpdb;
 
 		// Comments feeds.
@@ -2918,7 +2917,7 @@ class WP_Query {
 			$corderby = ( ! empty( $corderby ) ) ? 'ORDER BY ' . $corderby : '';
 			$climits  = ( ! empty( $climits ) ) ? $climits : '';
 
-			$comments = (array) $wpdb->get_results( "SELECT $distinct {$wpdb->comments}.* FROM {$wpdb->comments} $cjoin $cwhere $cgroupby $corderby $climits" );
+			$comments = (array) $wpdb->get_results( "SELECT {$this->request_parts['distinct']} {$wpdb->comments}.* FROM {$wpdb->comments} $cjoin $cwhere $cgroupby $corderby $climits" );
 			// Convert to WP_Comment.
 			/** @var WP_Comment[] */
 			$this->comments      = array_map( 'get_comment', $comments );
@@ -2940,7 +2939,7 @@ class WP_Query {
 		}
 	}
 
-	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$fields, &$limits){
+	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$fields, &$limits){
 				/*
 		 * Filters again for the benefit of caching plugins.
 		 * Regular plugins should use the hooks above.
@@ -3004,7 +3003,7 @@ class WP_Query {
 			 * @param string   $distinct The DISTINCT clause of the query.
 			 * @param WP_Query $this     The WP_Query instance (passed by reference).
 			 */
-			$distinct = apply_filters_ref_array( 'posts_distinct_request', array( $distinct, &$this ) );
+			$distinct = apply_filters_ref_array( 'posts_distinct_request', array( $this->request_parts['distinct'], &$this ) );
 
 			/**
 			 * Filters the SELECT clause of the query.
@@ -3050,7 +3049,7 @@ class WP_Query {
 			$groupby  = isset( $clauses['groupby'] ) ? $clauses['groupby'] : '';
 			$join     = isset( $clauses['join'] ) ? $clauses['join'] : '';
 			$orderby  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
-			$distinct = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
+			$this->request_parts['distinct'] = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
 			$fields   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
 			$limits   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
 		}
@@ -3128,7 +3127,7 @@ class WP_Query {
 
 	}
 
-	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$limits, &$fields) {
+	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$limits, &$fields) {
 
 		/*
 		 * Apply post-paging filters on where and join. Only plugins that
@@ -3190,7 +3189,7 @@ class WP_Query {
 		 * @param string   $distinct The DISTINCT clause of the query.
 		 * @param WP_Query $this     The WP_Query instance (passed by reference).
 		 */
-		$distinct = apply_filters_ref_array( 'posts_distinct', array( $distinct, &$this ) );
+		$distinct = apply_filters_ref_array( 'posts_distinct', array( $this->request_parts['distinct'], &$this ) );
 
 		/**
 		 * Filters the LIMIT clause of the query.
@@ -3230,7 +3229,7 @@ class WP_Query {
 		$groupby  = isset( $clauses['groupby'] ) ? $clauses['groupby'] : '';
 		$join     = isset( $clauses['join'] ) ? $clauses['join'] : '';
 		$orderby  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
-		$distinct = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
+		$this->request_parts['distinct'] = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
 		$fields   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
 		$limits   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
 
