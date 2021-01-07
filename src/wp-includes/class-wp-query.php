@@ -2086,9 +2086,7 @@ class WP_Query {
 
 		$this->build_comments_for_get_posts($distinct, $where, $join);
 
-		$pieces = array( 'where', 'groupby', 'join', 'orderby', 'distinct', 'fields', 'limits' );
-
-		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $distinct, $limits, $fields, $pieces);
+		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $distinct, $limits, $fields);
 
 		/**
 		 * Fires to announce the query's current selection parameters.
@@ -2101,7 +2099,7 @@ class WP_Query {
 		 */
 		do_action( 'posts_selection', $where . $groupby . $orderby . $limits . $join );
 
-		$this->process_caching_filters($where, $groupby, $join, $orderby, $distinct, $fields, $limits, $pieces);
+		$this->process_caching_filters($where, $groupby, $join, $orderby, $distinct, $fields, $limits);
 
 		if ( ! empty( $groupby ) ) {
 			$groupby = 'GROUP BY ' . $groupby;
@@ -2918,7 +2916,7 @@ class WP_Query {
 		}
 	}
 
-	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$fields, &$limits, &$pieces){
+	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$fields, &$limits){
 				/*
 		 * Filters again for the benefit of caching plugins.
 		 * Regular plugins should use the hooks above.
@@ -3008,6 +3006,7 @@ class WP_Query {
 			 */
 			$limits = apply_filters_ref_array( 'post_limits_request', array( $limits, &$this ) );
 
+			$pieces = array( 'where', 'groupby', 'join', 'orderby', 'distinct', 'fields', 'limits' );
 			/**
 			 * Filters all query clauses at once, for convenience.
 			 *
@@ -3105,7 +3104,7 @@ class WP_Query {
 
 	}
 
-	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$limits, &$fields, &$pieces) {
+	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$distinct, &$limits, &$fields) {
 
 		/*
 		 * Apply post-paging filters on where and join. Only plugins that
@@ -3189,6 +3188,7 @@ class WP_Query {
 		 */
 		$fields = apply_filters_ref_array( 'posts_fields', array( $fields, &$this ) );
 
+		$pieces = array( 'where', 'groupby', 'join', 'orderby', 'distinct', 'fields', 'limits' );
 		/**
 		 * Filters all query clauses at once, for convenience.
 		 *
