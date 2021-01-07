@@ -2061,9 +2061,6 @@ class WP_Query {
 		$page             = 1;
 
 		$this->process_query_vars_for_get_posts($this->query_vars);
-
-		$post_type = &$this->query_vars['post_type'];
-
 		$this->process_post_type_for_get_posts();
 		$this->process_attachments_for_get_posts();
 		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_status_join);
@@ -2071,7 +2068,7 @@ class WP_Query {
 		$this->process_meta_queries_for_get_posts($join, $where);
 
 		$fields = $this->build_fields_for_get_posts();
-		$where = $this->build_where_for_get_posts($where, $post_type, $post_status_join, $join);
+		$where = $this->build_where_for_get_posts($where, $post_status_join, $join);
 		$orderby = $this->build_orderby_for_get_posts();
 
 		$this->apply_pagination_filters($where, $join);
@@ -2164,7 +2161,7 @@ class WP_Query {
 			}
 		}
 
-		$this->handle_post_processing_of_retrieved_posts($page, $post_type);
+		$this->handle_post_processing_of_retrieved_posts($page);
 		$this->handle_lazy_loading();
 
 		return $this->posts;
@@ -2412,7 +2409,7 @@ class WP_Query {
 
 	}
 
-	public function build_where_for_get_posts($where, $post_type, $post_status_join, &$join){
+	public function build_where_for_get_posts($where, $post_status_join, &$join){
 		global $wpdb;
 
 		$search = '';
@@ -2536,7 +2533,7 @@ class WP_Query {
 				$reqpage_obj   = get_post( $reqpage );
 				if ( is_object( $reqpage_obj ) && 'attachment' === $reqpage_obj->post_type ) {
 					$this->is_attachment = true;
-					$post_type           = 'attachment';
+					$this->query_vars['post_type']           = 'attachment';
 					$this->query_vars['post_type']      = 'attachment';
 					$this->is_page       = true;
 					$this->query_vars['attachment_id']  = $reqpage;
@@ -2669,17 +2666,17 @@ class WP_Query {
 			$where .= $wpdb->prepare( " AND {$wpdb->posts}.ping_status = %s ", $this->query_vars['ping_status'] );
 		}
 
-		if ( 'any' === $post_type ) {
+		if ( 'any' === $this->query_vars['post_type'] ) {
 			$in_search_post_types = get_post_types( array( 'exclude_from_search' => false ) );
 			if ( empty( $in_search_post_types ) ) {
 				$where .= ' AND 1=0 ';
 			} else {
 				$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", array_map( 'esc_sql', $in_search_post_types ) ) . "')";
 			}
-		} elseif ( ! empty( $post_type ) && is_array( $post_type ) ) {
-			$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", esc_sql( $post_type ) ) . "')";
-		} elseif ( ! empty( $post_type ) ) {
-			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_type = %s", $post_type );
+		} elseif ( ! empty( $this->query_vars['post_type'] ) && is_array( $this->query_vars['post_type'] ) ) {
+			$where .= " AND {$wpdb->posts}.post_type IN ('" . implode( "', '", esc_sql( $this->query_vars['post_type'] ) ) . "')";
+		} elseif ( ! empty( $this->query_vars['post_type'] ) ) {
+			$where .= $wpdb->prepare( " AND {$wpdb->posts}.post_type = %s", $this->query_vars['post_type'] );
 		} elseif ( $this->is_attachment ) {
 			$where .= " AND {$wpdb->posts}.post_type = 'attachment'";
 		} elseif ( $this->is_page ) {
@@ -2689,19 +2686,19 @@ class WP_Query {
 		}
 
 		$post_type_cap = null;
-		if ( is_array( $post_type ) && count( $post_type ) > 1 ) {
+		if ( is_array( $this->query_vars['post_type'] ) && count( $this->query_vars['post_type'] ) > 1 ) {
 			$post_type_cap = 'multiple_post_type';
 		} else {
-			if ( is_array( $post_type ) ) {
-				$post_type = reset( $post_type );
+			if ( is_array( $this->query_vars['post_type'] ) ) {
+				$this->query_vars['post_type'] = reset( $this->query_vars['post_type'] );
 			}
-			$post_type_object = get_post_type_object( $post_type );
+			$post_type_object = get_post_type_object( $this->query_vars['post_type'] );
 			if ( empty( $post_type_object ) ) {
-				$post_type_cap = $post_type;
+				$post_type_cap = $this->query_vars['post_type'];
 			}
 		}
 
-		$post_type_object = $this->build_post_type_object($post_type);
+		$post_type_object = $this->build_post_type_object($this->query_vars['post_type']);
 
 		if ( ! empty( $post_type_object ) ) {
 			$edit_others_cap  = $post_type_object->cap->edit_others_posts;
@@ -3066,7 +3063,7 @@ class WP_Query {
 
 	}
 
-	public function handle_post_processing_of_retrieved_posts($page, $post_type) {
+	public function handle_post_processing_of_retrieved_posts($page) {
 		// Convert to WP_Post objects.
 		if ( $this->posts ) {
 			/** @var WP_Post[] */
@@ -3089,7 +3086,7 @@ class WP_Query {
 
 		$this->verify_post_should_display();
 
-		$this->process_sticky_posts($page, $post_type);
+		$this->process_sticky_posts($page);
 
 		if ( ! $this->query_vars['suppress_filters'] ) {
 			/**
@@ -3104,7 +3101,7 @@ class WP_Query {
 			$this->posts = apply_filters_ref_array( 'the_posts', array( $this->posts, &$this ) );
 		}
 
-		$this->ensure_posts_are_wp_posts($post_type);
+		$this->ensure_posts_are_wp_posts();
 
 	}
 
@@ -3322,7 +3319,7 @@ class WP_Query {
 	 *
 	 * @since Unknown
 	 */
-	public function process_sticky_posts($page, $post_type) {
+	public function process_sticky_posts($page) {
 
 		if ( $page > 1 || !$this->is_home || $this->query_vars['ignore_sticky_posts'] ) {
 			return;
@@ -3363,7 +3360,7 @@ class WP_Query {
 			$stickies = get_posts(
 				array(
 					'post__in'    => $sticky_posts,
-					'post_type'   => $post_type,
+					'post_type'   => $this->query_vars['post_type'],
 					'post_status' => 'publish',
 					'nopaging'    => true,
 				)
@@ -3381,7 +3378,7 @@ class WP_Query {
 	 *
 	 * @since Unknown
 	 */
-	public function ensure_posts_are_wp_posts($post_type){
+	public function ensure_posts_are_wp_posts(){
 
 		if ( !is_array($this->posts) || 0 === count($this->posts) ) {
 			$this->post_count = 0;
@@ -3395,7 +3392,7 @@ class WP_Query {
 		$this->posts = array_map( 'get_post', $this->posts );
 
 		if ( $this->query_vars['cache_results'] ) {
-			update_post_caches( $this->posts, $post_type, $this->query_vars['update_post_term_cache'], $this->query_vars['update_post_meta_cache'] );
+			update_post_caches( $this->posts, $this->query_vars['post_type'], $this->query_vars['update_post_term_cache'], $this->query_vars['update_post_meta_cache'] );
 		}
 
 		/** @var WP_Post */
