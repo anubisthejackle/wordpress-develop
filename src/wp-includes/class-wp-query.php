@@ -2166,36 +2166,11 @@ class WP_Query {
 		$this->posts = apply_filters_ref_array( 'posts_pre_query', array( null, &$this ) );
 
 		if ( 'ids' === $q['fields'] ) {
-			if ( null === $this->posts ) {
-				$this->posts = $wpdb->get_col( $this->request );
-			}
-
-			/** @var int[] */
-			$this->posts      = array_map( 'intval', $this->posts );
-			$this->post_count = count( $this->posts );
-			$this->set_found_posts( $q, $limits );
-
-			return $this->posts;
+			return $this->get_posts_ids($limits);
 		}
 
 		if ( 'id=>parent' === $q['fields'] ) {
-			if ( null === $this->posts ) {
-				$this->posts = $wpdb->get_results( $this->request );
-			}
-
-			$this->post_count = count( $this->posts );
-			$this->set_found_posts( $q, $limits );
-
-			/** @var int[] */
-			$r = array();
-			foreach ( $this->posts as $key => $post ) {
-				$this->posts[ $key ]->ID          = (int) $post->ID;
-				$this->posts[ $key ]->post_parent = (int) $post->post_parent;
-
-				$r[ (int) $post->ID ] = (int) $post->post_parent;
-			}
-
-			return $r;
+			return $this->get_posts_ids_with_parents($limits);
 		}
 
 		if ( null === $this->posts ) {
@@ -2216,32 +2191,9 @@ class WP_Query {
 			$split_the_query = apply_filters( 'split_the_query', $split_the_query, $this );
 
 			if ( $split_the_query ) {
-				// First get the IDs and then fill in the objects.
-
-				$this->request = "SELECT $found_rows $distinct {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
-
-				/**
-				 * Filters the Post IDs SQL request before sending.
-				 *
-				 * @since 3.4.0
-				 *
-				 * @param string   $request The post ID request.
-				 * @param WP_Query $query   The WP_Query instance.
-				 */
-				$this->request = apply_filters( 'posts_request_ids', $this->request, $this );
-
-				$ids = $wpdb->get_col( $this->request );
-
-				if ( $ids ) {
-					$this->posts = $ids;
-					$this->set_found_posts( $q, $limits );
-					_prime_post_caches( $ids, $q['update_post_term_cache'], $q['update_post_meta_cache'] );
-				} else {
-					$this->posts = array();
-				}
+				$this->get_posts_with_split_query($found_rows, $distinct, $join, $where, $groupby, $orderby, $limits);
 			} else {
-				$this->posts = $wpdb->get_results( $this->request );
-				$this->set_found_posts( $q, $limits );
+				$this->get_posts_with_default_query($limits);
 			}
 		}
 
@@ -2249,6 +2201,79 @@ class WP_Query {
 		$this->handle_lazy_loading();
 
 		return $this->posts;
+	}
+
+	public function get_posts_ids($limits) {
+		global $wpdb;
+
+		if ( null === $this->posts ) {
+			$this->posts = $wpdb->get_col( $this->request );
+		}
+
+		/** @var int[] */
+		$this->posts      = array_map( 'intval', $this->posts );
+		$this->post_count = count( $this->posts );
+		$this->set_found_posts( $this->query_vars, $limits );
+
+		return $this->posts;
+
+	}
+
+	public function get_posts_ids_with_parents($limits) {
+		global $wpdb;
+
+		if ( null === $this->posts ) {
+			$this->posts = $wpdb->get_results( $this->request );
+		}
+
+		$this->post_count = count( $this->posts );
+		$this->set_found_posts( $this->query_vars, $limits );
+
+		/** @var int[] */
+		$r = array();
+		foreach ( $this->posts as $key => $post ) {
+			$this->posts[ $key ]->ID          = (int) $post->ID;
+			$this->posts[ $key ]->post_parent = (int) $post->post_parent;
+
+			$r[ (int) $post->ID ] = (int) $post->post_parent;
+		}
+
+		return $r;
+	}
+
+	public function get_posts_with_split_query($found_rows, $distinct, $join, $where, $groupby, $orderby, $limits){
+		global $wpdb;
+
+		// First get the IDs and then fill in the objects.
+		$this->request = "SELECT $found_rows $distinct {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
+
+		/**
+		 * Filters the Post IDs SQL request before sending.
+		 *
+		 * @since 3.4.0
+		 *
+		 * @param string   $request The post ID request.
+		 * @param WP_Query $this    The WP_Query instance.
+		 */
+		$this->request = apply_filters( 'posts_request_ids', $this->request, $this );
+
+		$ids = $wpdb->get_col( $this->request );
+
+		if ( $ids ) {
+			$this->posts = $ids;
+			$this->set_found_posts( $this->query_vars, $limits );
+			_prime_post_caches( $ids, $this->query_vars['update_post_term_cache'], $this->query_vars['update_post_meta_cache'] );
+			return;
+		}
+
+		$this->posts = array();
+
+	}
+
+	public function get_posts_with_default_query($limits){
+		global $wpdb;
+		$this->posts = $wpdb->get_results( $this->request );
+		$this->set_found_posts( $this->query_vars, $limits );
 	}
 
 	public function process_meta_queries_for_get_posts(&$join, &$where) {
@@ -2260,7 +2285,6 @@ class WP_Query {
 			$where  .= $clauses['where'];
 		}
 	}
-
 
 	public function build_limits_for_get_posts($page) {
 		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
