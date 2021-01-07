@@ -2031,6 +2031,18 @@ class WP_Query {
 
 	}
 
+	public function process_author_for_get_posts(){
+		// Author/user stuff.
+		if ( ! empty( $this->query_vars['author'] ) && '0' != $this->query_vars['author'] ) {
+			$this->query_vars['author'] = addslashes_gpc( '' . urldecode( $this->query_vars['author'] ) );
+			$authors     = array_unique( array_map( 'intval', preg_split( '/[,\s]+/', $this->query_vars['author'] ) ) );
+			foreach ( $authors as $author ) {
+				$key         = $author > 0 ? 'author__in' : 'author__not_in';
+				$this->query_vars[ $key ][] = abs( $author );
+			}
+			$this->query_vars['author'] = implode( ',', $authors );
+		}
+	}
 	/**
 	 * Retrieves an array of posts based on query variables.
 	 *
@@ -2073,51 +2085,8 @@ class WP_Query {
 		}
 
 		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_type, $post_status_join);
-
-		// Author/user stuff.
-
-		if ( ! empty( $q['author'] ) && '0' != $q['author'] ) {
-			$q['author'] = addslashes_gpc( '' . urldecode( $q['author'] ) );
-			$authors     = array_unique( array_map( 'intval', preg_split( '/[,\s]+/', $q['author'] ) ) );
-			foreach ( $authors as $author ) {
-				$key         = $author > 0 ? 'author__in' : 'author__not_in';
-				$q[ $key ][] = abs( $author );
-			}
-			$q['author'] = implode( ',', $authors );
-		}
-
-		// Matching by comment count.
-		if ( isset( $q['comment_count'] ) ) {
-			// Numeric comment count is converted to array format.
-			if ( is_numeric( $q['comment_count'] ) ) {
-				$q['comment_count'] = array(
-					'value' => (int) $q['comment_count'],
-				);
-			}
-
-			if ( isset( $q['comment_count']['value'] ) ) {
-				$q['comment_count'] = array_merge(
-					array(
-						'compare' => '=',
-					),
-					$q['comment_count']
-				);
-
-				// Fallback for invalid compare operators is '='.
-				$compare_operators = array( '=', '!=', '>', '>=', '<', '<=' );
-				if ( ! in_array( $q['comment_count']['compare'], $compare_operators, true ) ) {
-					$q['comment_count']['compare'] = '=';
-				}
-
-				$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_count {$q['comment_count']['compare']} %d", $q['comment_count']['value'] );
-			}
-		}
-
-		if ( ! empty( $this->meta_query->queries ) ) {
-			$clauses = $this->meta_query->get_sql( 'post', $wpdb->posts, 'ID', $this );
-			$join   .= $clauses['join'];
-			$where  .= $clauses['where'];
-		}
+		$this->process_author_for_get_posts();
+		$this->process_meta_queries_for_get_posts($join, $where);
 
 		$where = $this->build_where_for_get_posts($where, $post_type, $post_status_join, $join);
 		$orderby = $this->build_orderby_for_get_posts();
@@ -2282,6 +2251,17 @@ class WP_Query {
 		return $this->posts;
 	}
 
+	public function process_meta_queries_for_get_posts(&$join, &$where) {
+		global $wpdb;
+
+		if ( ! empty( $this->meta_query->queries ) ) {
+			$clauses = $this->meta_query->get_sql( 'post', $wpdb->posts, 'ID', $this );
+			$join   .= $clauses['join'];
+			$where  .= $clauses['where'];
+		}
+	}
+
+
 	public function build_limits_for_get_posts($page) {
 		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
 
@@ -2441,6 +2421,33 @@ class WP_Query {
 			 * @param WP_Query $this   The current WP_Query object.
 			 */
 			$search = apply_filters_ref_array( 'posts_search', array( $search, &$this ) );
+		}
+
+		// Matching by comment count.
+		if ( isset( $this->query_vars['comment_count'] ) ) {
+			// Numeric comment count is converted to array format.
+			if ( is_numeric( $this->query_vars['comment_count'] ) ) {
+				$this->query_vars['comment_count'] = array(
+					'value' => (int) $this->query_vars['comment_count'],
+				);
+			}
+
+			if ( isset( $this->query_vars['comment_count']['value'] ) ) {
+				$this->query_vars['comment_count'] = array_merge(
+					array(
+						'compare' => '=',
+					),
+					$this->query_vars['comment_count']
+				);
+
+				// Fallback for invalid compare operators is '='.
+				$compare_operators = array( '=', '!=', '>', '>=', '<', '<=' );
+				if ( ! in_array( $this->query_vars['comment_count']['compare'], $compare_operators, true ) ) {
+					$this->query_vars['comment_count']['compare'] = '=';
+				}
+
+				$where .= $wpdb->prepare( " AND {$wpdb->posts}.comment_count {$this->query_vars['comment_count']['compare']} %d", $this->query_vars['comment_count']['value'] );
+			}
 		}
 
 		// Author stuff for nice URLs.
