@@ -2043,6 +2043,13 @@ class WP_Query {
 			$this->query_vars['author'] = implode( ',', $authors );
 		}
 	}
+
+	public function process_attachments_for_get_posts(){
+		// If an attachment is requested by number, let it supersede any post number.
+		if ( $this->query_vars['attachment_id'] ) {
+			$this->query_vars['p'] = absint( $this->query_vars['attachment_id'] );
+		}
+	}
 	/**
 	 * Retrieves an array of posts based on query variables.
 	 *
@@ -2070,21 +2077,16 @@ class WP_Query {
 		$page             = 1;
 
 		$this->process_query_vars_for_get_posts($this->query_vars);
+
 		$post_type = $this->query_vars['post_type'];
 
-		$fields = $this->process_fields_for_get_posts();
-
 		$this->process_post_type_for_get_posts();
-
-		// If an attachment is requested by number, let it supersede any post number.
-		if ( $this->query_vars['attachment_id'] ) {
-			$this->query_vars['p'] = absint( $this->query_vars['attachment_id'] );
-		}
-
+		$this->process_attachments_for_get_posts();
 		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_type, $post_status_join);
 		$this->process_author_for_get_posts();
 		$this->process_meta_queries_for_get_posts($join, $where);
 
+		$fields = $this->process_fields_for_get_posts();
 		$where = $this->build_where_for_get_posts($where, $post_type, $post_status_join, $join);
 		$orderby = $this->build_orderby_for_get_posts();
 
