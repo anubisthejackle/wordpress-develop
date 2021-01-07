@@ -84,6 +84,14 @@ class WP_Query {
 	public $request;
 
 	/**
+	 * Different sections used to build request SQL.
+	 *
+	 * @since Unknown
+	 * @var array
+	 */
+	public $request_parts = array();
+
+	/**
 	 * Array of post objects or post IDs.
 	 *
 	 * @since 1.5.0
@@ -149,6 +157,14 @@ class WP_Query {
 	 * @var int
 	 */
 	public $current_comment = -1;
+
+	/**
+	 * The index of the page in get_posts pagination.
+	 *
+	 * @since Unknown
+	 * @var int
+	 */
+	public $current_page = 1;
 
 	/**
 	 * Current comment object.
@@ -1891,6 +1907,15 @@ class WP_Query {
 		} else {
 			$q['no_found_rows'] = false;
 		}
+
+		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
+
+			$this->current_page = absint( $this->query_vars['paged'] );
+			if ( ! $this->current_page ) {
+				$this->current_page = 1;
+			}
+
+		}
 	}
 
 	public function process_post_type_for_get_posts() {
@@ -2052,13 +2077,21 @@ class WP_Query {
 		$this->pre_get_posts();
 
 		// First let's clear some variables.
-		$distinct         = '';
-		$where            = '';
-		$limits           = '';
-		$join             = '';
-		$groupby          = '';
-		$post_status_join = false;
-		$page             = 1;
+		$this->request_parts = array(
+			'distinct' => '',
+			'where' => '',
+			'limits' => '',
+			'join' => '',
+			'groupby' => '',
+			'post_status_join' => false,
+		);
+
+		$distinct         = &$this->request_parts['distinct'];
+		$where            = &$this->request_parts['where'];
+		$limits           = &$this->request_parts['limits'];
+		$join             = &$this->request_parts['join'];
+		$groupby          = &$this->request_parts['groupby'];
+		$post_status_join = &$this->request_parts['post_status_join'];
 
 		$this->process_query_vars_for_get_posts($this->query_vars);
 		$this->process_post_type_for_get_posts();
@@ -2073,16 +2106,7 @@ class WP_Query {
 
 		$this->apply_pagination_filters($where, $join);
 
-		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
-
-			$page = absint( $this->query_vars['paged'] );
-			if ( ! $page ) {
-				$page = 1;
-			}
-
-		}
-
-		$limits = $this->build_limits_for_get_posts($page);
+		$limits = $this->build_limits_for_get_posts();
 
 		$this->build_comments_for_get_posts($distinct, $where, $join);
 
@@ -2159,7 +2183,7 @@ class WP_Query {
 			}
 		}
 
-		$this->handle_post_processing_of_retrieved_posts($page);
+		$this->handle_post_processing_of_retrieved_posts();
 		$this->handle_lazy_loading();
 
 		return $this->posts;
@@ -2270,7 +2294,7 @@ class WP_Query {
 		}
 	}
 
-	public function build_limits_for_get_posts($page) {
+	public function build_limits_for_get_posts() {
 		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
 
 			// If 'offset' is provided, it takes precedence over 'paged'.
@@ -2278,7 +2302,7 @@ class WP_Query {
 				$this->query_vars['offset'] = absint( $this->query_vars['offset'] );
 				$pgstrt      = $this->query_vars['offset'] . ', ';
 			} else {
-				$pgstrt = absint( ( $page - 1 ) * $this->query_vars['posts_per_page'] ) . ', ';
+				$pgstrt = absint( ( $this->current_page - 1 ) * $this->query_vars['posts_per_page'] ) . ', ';
 			}
 			return 'LIMIT ' . $pgstrt . $this->query_vars['posts_per_page'];
 		}
@@ -3062,7 +3086,7 @@ class WP_Query {
 
 	}
 
-	public function handle_post_processing_of_retrieved_posts($page) {
+	public function handle_post_processing_of_retrieved_posts() {
 		// Convert to WP_Post objects.
 		if ( $this->posts ) {
 			/** @var WP_Post[] */
@@ -3085,7 +3109,7 @@ class WP_Query {
 
 		$this->verify_post_should_display();
 
-		$this->process_sticky_posts($page);
+		$this->process_sticky_posts();
 
 		if ( ! $this->query_vars['suppress_filters'] ) {
 			/**
@@ -3319,9 +3343,9 @@ class WP_Query {
 	 *
 	 * @since Unknown
 	 */
-	public function process_sticky_posts($page) {
+	public function process_sticky_posts() {
 
-		if ( $page > 1 || !$this->is_home || $this->query_vars['ignore_sticky_posts'] ) {
+		if ( $this->current_page > 1 || !$this->is_home || $this->query_vars['ignore_sticky_posts'] ) {
 			return;
 		}
 
