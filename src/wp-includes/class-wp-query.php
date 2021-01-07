@@ -2492,7 +2492,6 @@ class WP_Query {
 		}
 
 		// Author stuff for nice URLs.
-
 		if ( '' !== $this->query_vars['author_name'] ) {
 			if ( strpos( $this->query_vars['author_name'], '/' ) !== false ) {
 				$this->query_vars['author_name'] = explode( '/', $this->query_vars['author_name'] );
@@ -2511,7 +2510,6 @@ class WP_Query {
 		}
 
 		// MIME-Type stuff for attachment browsing.
-
 		if ( isset( $this->query_vars['post_mime_type'] ) && '' !== $this->query_vars['post_mime_type'] ) {
 			$whichmimetype = wp_post_mime_type_where( $this->query_vars['post_mime_type'], $wpdb->posts );
 		}
@@ -2608,48 +2606,7 @@ class WP_Query {
 			}
 		}
 
-		// Handle the other individual date parameters.
-		$date_parameters = array();
-
-		if ( '' !== $this->query_vars['hour'] ) {
-			$date_parameters['hour'] = $this->query_vars['hour'];
-		}
-
-		if ( '' !== $this->query_vars['minute'] ) {
-			$date_parameters['minute'] = $this->query_vars['minute'];
-		}
-
-		if ( '' !== $this->query_vars['second'] ) {
-			$date_parameters['second'] = $this->query_vars['second'];
-		}
-
-		if ( $this->query_vars['year'] ) {
-			$date_parameters['year'] = $this->query_vars['year'];
-		}
-
-		if ( $this->query_vars['monthnum'] ) {
-			$date_parameters['monthnum'] = $this->query_vars['monthnum'];
-		}
-
-		if ( $this->query_vars['w'] ) {
-			$date_parameters['week'] = $this->query_vars['w'];
-		}
-
-		if ( $this->query_vars['day'] ) {
-			$date_parameters['day'] = $this->query_vars['day'];
-		}
-
-		if ( $date_parameters ) {
-			$date_query = new WP_Date_Query( array( $date_parameters ) );
-			$this->request_parts['where']     .= $date_query->get_sql();
-		}
-		unset( $date_parameters, $date_query );
-
-		// Handle complex date queries.
-		if ( ! empty( $this->query_vars['date_query'] ) ) {
-			$this->date_query = new WP_Date_Query( $this->query_vars['date_query'] );
-			$this->request_parts['where']           .= $this->date_query->get_sql();
-		}
+		$this->add_date_parameters_to_where();
 
 		if ( ! empty( $this->query_vars['author__not_in'] ) ) {
 			$author__not_in = implode( ',', array_map( 'absint', array_unique( (array) $this->query_vars['author__not_in'] ) ) );
@@ -2837,7 +2794,52 @@ class WP_Query {
 			$this->request_parts['where'] .= ')';
 		}
 
-		return $this->request_parts['where'];
+	}
+
+	public function add_date_parameters_to_where(){
+		// Handle the other individual date parameters.
+		$date_parameters = array();
+
+		if ( '' !== $this->query_vars['hour'] ) {
+			$date_parameters['hour'] = $this->query_vars['hour'];
+		}
+
+		if ( '' !== $this->query_vars['minute'] ) {
+			$date_parameters['minute'] = $this->query_vars['minute'];
+		}
+
+		if ( '' !== $this->query_vars['second'] ) {
+			$date_parameters['second'] = $this->query_vars['second'];
+		}
+
+		if ( $this->query_vars['year'] ) {
+			$date_parameters['year'] = $this->query_vars['year'];
+		}
+
+		if ( $this->query_vars['monthnum'] ) {
+			$date_parameters['monthnum'] = $this->query_vars['monthnum'];
+		}
+
+		if ( $this->query_vars['w'] ) {
+			$date_parameters['week'] = $this->query_vars['w'];
+		}
+
+		if ( $this->query_vars['day'] ) {
+			$date_parameters['day'] = $this->query_vars['day'];
+		}
+
+		if ( $date_parameters ) {
+			$date_query = new WP_Date_Query( array( $date_parameters ) );
+			$this->request_parts['where'] .= $date_query->get_sql();
+		}
+
+		if ( empty( $this->query_vars['date_query'] ) ) {
+			return;
+		}
+
+		// Handle complex date queries.
+		$this->date_query = new WP_Date_Query( $this->query_vars['date_query'] );
+		$this->request_parts['where'] .= $this->date_query->get_sql();
 	}
 
 	public function build_fields_for_get_posts(){
