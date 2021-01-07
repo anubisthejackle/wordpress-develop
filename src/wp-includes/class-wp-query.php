@@ -1942,7 +1942,7 @@ class WP_Query {
 		}
 	}
 
-	public function process_taxonomy_for_get_posts(&$join, &$where, &$groupby, &$post_status_join) {
+	public function process_taxonomy_for_get_posts(&$join, &$where, &$groupby) {
 		global $wpdb;
 
 		if ( ! $this->is_singular ) {
@@ -1972,9 +1972,9 @@ class WP_Query {
 					$this->query_vars['post_type'] = $this->query_vars['post_type'][0];
 				}
 
-				$post_status_join = true;
+				$this->request_parts['post_status_join'] = true;
 			} elseif ( in_array( 'attachment', (array) $this->query_vars['post_type'], true ) ) {
-				$post_status_join = true;
+				$this->request_parts['post_status_join'] = true;
 			}
 		}
 
@@ -2087,29 +2087,27 @@ class WP_Query {
 		);
 
 		$where            = &$this->request_parts['where'];
-		$limits           = &$this->request_parts['limits'];
 		$join             = &$this->request_parts['join'];
 		$groupby          = &$this->request_parts['groupby'];
-		$post_status_join = &$this->request_parts['post_status_join'];
 
 		$this->process_query_vars_for_get_posts($this->query_vars);
 		$this->process_post_type_for_get_posts();
 		$this->process_attachments_for_get_posts();
-		$this->process_taxonomy_for_get_posts($join, $where, $groupby, $post_status_join);
+		$this->process_taxonomy_for_get_posts($join, $where, $groupby);
 		$this->process_author_for_get_posts();
 		$this->process_meta_queries_for_get_posts($join, $where);
 
 		$fields = $this->build_fields_for_get_posts();
-		$where = $this->build_where_for_get_posts($where, $post_status_join, $join);
+		$where = $this->build_where_for_get_posts($where, $join);
 		$orderby = $this->build_orderby_for_get_posts();
 
 		$this->apply_pagination_filters($where, $join);
 
-		$limits = $this->build_limits_for_get_posts();
+		$this->build_limits_for_get_posts();
 
 		$this->build_comments_for_get_posts($where, $join);
 
-		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $limits, $fields);
+		$this->apply_post_paging_filters($where, $groupby, $join, $orderby, $fields);
 
 		/**
 		 * Fires to announce the query's current selection parameters.
@@ -2120,20 +2118,20 @@ class WP_Query {
 		 *
 		 * @param string $selection The assembled selection query.
 		 */
-		do_action( 'posts_selection', $where . $groupby . $orderby . $limits . $join );
+		do_action( 'posts_selection', $where . $groupby . $orderby . $this->request_parts['limits'] . $join );
 
-		$this->process_caching_filters($where, $groupby, $join, $orderby, $fields, $limits);
+		$this->process_caching_filters($where, $groupby, $join, $orderby, $fields);
 
 		if ( ! empty( $groupby ) ) {
 			$groupby = 'GROUP BY ' . $groupby;
 		}
 
 		$found_rows = '';
-		if ( ! $this->query_vars['no_found_rows'] && ! empty( $limits ) ) {
+		if ( ! $this->query_vars['no_found_rows'] && ! empty( $this->request_parts['limits'] ) ) {
 			$found_rows = 'SQL_CALC_FOUND_ROWS';
 		}
 
-		$old_request   = "SELECT $found_rows {$this->request_parts['distinct']} $fields FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
+		$old_request   = "SELECT $found_rows {$this->request_parts['distinct']} $fields FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby {$this->request_parts['limits']}";
 		$this->request = $old_request;
 
 		if ( ! $this->query_vars['suppress_filters'] ) {
@@ -2167,18 +2165,18 @@ class WP_Query {
 		$this->posts = apply_filters_ref_array( 'posts_pre_query', array( null, &$this ) );
 
 		if ( 'ids' === $this->query_vars['fields'] ) {
-			return $this->get_posts_ids($limits);
+			return $this->get_posts_ids();
 		}
 
 		if ( 'id=>parent' === $this->query_vars['fields'] ) {
-			return $this->get_posts_ids_with_parents($limits);
+			return $this->get_posts_ids_with_parents();
 		}
 
 		if ( null === $this->posts ) {
-			if ( $this->should_split_the_query($old_request, $fields, $limits) ) {
-				$this->get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby, $limits);
+			if ( $this->should_split_the_query($old_request, $fields) ) {
+				$this->get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby);
 			} else {
-				$this->get_posts_with_default_query($limits);
+				$this->get_posts_with_default_query();
 			}
 		}
 
@@ -2188,10 +2186,10 @@ class WP_Query {
 		return $this->posts;
 	}
 
-	public function should_split_the_query($old_request, $fields, $limits){
+	public function should_split_the_query($old_request, $fields){
 		global $wpdb;
 
-		$split_the_query = ( $old_request == $this->request && "{$wpdb->posts}.*" === $fields && ! empty( $limits ) && $this->query_vars['posts_per_page'] < 500 );
+		$split_the_query = ( $old_request == $this->request && "{$wpdb->posts}.*" === $fields && ! empty( $this->request_parts['limits'] ) && $this->query_vars['posts_per_page'] < 500 );
 
 		/**
 		 * Filters whether to split the query.
@@ -2210,7 +2208,7 @@ class WP_Query {
 		return ($split_the_query) ? true : false;
 	}
 
-	public function get_posts_ids($limits) {
+	public function get_posts_ids() {
 		global $wpdb;
 
 		if ( null === $this->posts ) {
@@ -2220,13 +2218,13 @@ class WP_Query {
 		/** @var int[] */
 		$this->posts      = array_map( 'intval', $this->posts );
 		$this->post_count = count( $this->posts );
-		$this->set_found_posts( $this->query_vars, $limits );
+		$this->set_found_posts( $this->query_vars, $this->request_parts['limits'] );
 
 		return $this->posts;
 
 	}
 
-	public function get_posts_ids_with_parents($limits) {
+	public function get_posts_ids_with_parents() {
 		global $wpdb;
 
 		if ( null === $this->posts ) {
@@ -2234,7 +2232,7 @@ class WP_Query {
 		}
 
 		$this->post_count = count( $this->posts );
-		$this->set_found_posts( $this->query_vars, $limits );
+		$this->set_found_posts( $this->query_vars, $this->request_parts['limits'] );
 
 		/** @var int[] */
 		$r = array();
@@ -2248,11 +2246,11 @@ class WP_Query {
 		return $r;
 	}
 
-	public function get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby, $limits){
+	public function get_posts_with_split_query($found_rows, $join, $where, $groupby, $orderby){
 		global $wpdb;
 
 		// First get the IDs and then fill in the objects.
-		$this->request = "SELECT $found_rows {$this->request_parts['distinct']} {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby $limits";
+		$this->request = "SELECT $found_rows {$this->request_parts['distinct']} {$wpdb->posts}.ID FROM {$wpdb->posts} $join WHERE 1=1 $where $groupby $orderby {$this->request_parts['limits']}";
 
 		/**
 		 * Filters the Post IDs SQL request before sending.
@@ -2268,7 +2266,7 @@ class WP_Query {
 
 		if ( $ids ) {
 			$this->posts = $ids;
-			$this->set_found_posts( $this->query_vars, $limits );
+			$this->set_found_posts( $this->query_vars, $this->request_parts['limits'] );
 			_prime_post_caches( $ids, $this->query_vars['update_post_term_cache'], $this->query_vars['update_post_meta_cache'] );
 			return;
 		}
@@ -2277,10 +2275,10 @@ class WP_Query {
 
 	}
 
-	public function get_posts_with_default_query($limits){
+	public function get_posts_with_default_query(){
 		global $wpdb;
 		$this->posts = $wpdb->get_results( $this->request );
-		$this->set_found_posts( $this->query_vars, $limits );
+		$this->set_found_posts( $this->query_vars, $this->request_parts['limits'] );
 	}
 
 	public function process_meta_queries_for_get_posts(&$join, &$where) {
@@ -2295,7 +2293,6 @@ class WP_Query {
 
 	public function build_limits_for_get_posts() {
 		if ( empty( $this->query_vars['nopaging'] ) && ! $this->is_singular ) {
-
 			// If 'offset' is provided, it takes precedence over 'paged'.
 			if ( isset( $this->query_vars['offset'] ) && is_numeric( $this->query_vars['offset'] ) ) {
 				$this->query_vars['offset'] = absint( $this->query_vars['offset'] );
@@ -2303,7 +2300,7 @@ class WP_Query {
 			} else {
 				$pgstrt = absint( ( $this->current_page - 1 ) * $this->query_vars['posts_per_page'] ) . ', ';
 			}
-			return 'LIMIT ' . $pgstrt . $this->query_vars['posts_per_page'];
+			$this->request_parts['limits'] = 'LIMIT ' . $pgstrt . $this->query_vars['posts_per_page'];
 		}
 	}
 
@@ -2430,7 +2427,7 @@ class WP_Query {
 
 	}
 
-	public function build_where_for_get_posts($where, $post_status_join, &$join){
+	public function build_where_for_get_posts($where, &$join){
 		global $wpdb;
 
 		$search = '';
@@ -2781,7 +2778,7 @@ class WP_Query {
 					$statuswheres[] = '(' . implode( ' OR ', $p_status ) . ')';
 				}
 			}
-			if ( $post_status_join ) {
+			if ( $this->request_parts['post_status_join'] ) {
 				$join .= " LEFT JOIN {$wpdb->posts} AS p2 ON ({$wpdb->posts}.post_parent = p2.ID) ";
 				foreach ( $statuswheres as $index => $statuswhere ) {
 					$statuswheres[ $index ] = "($statuswhere OR ({$wpdb->posts}.post_status = 'inherit' AND " . str_replace( $wpdb->posts, 'p2', $statuswhere ) . '))';
@@ -2939,7 +2936,7 @@ class WP_Query {
 		}
 	}
 
-	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$fields, &$limits){
+	public function process_caching_filters(&$where, &$groupby, &$join, &$orderby, &$fields){
 				/*
 		 * Filters again for the benefit of caching plugins.
 		 * Regular plugins should use the hooks above.
@@ -3027,7 +3024,7 @@ class WP_Query {
 			 * @param string   $limits The LIMIT clause of the query.
 			 * @param WP_Query $this   The WP_Query instance (passed by reference).
 			 */
-			$limits = apply_filters_ref_array( 'post_limits_request', array( $limits, &$this ) );
+			$limits = apply_filters_ref_array( 'post_limits_request', array( $this->request_parts['limits'], &$this ) );
 
 			$pieces = array( 'where', 'groupby', 'join', 'orderby', 'distinct', 'fields', 'limits' );
 			/**
@@ -3051,7 +3048,7 @@ class WP_Query {
 			$orderby  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
 			$this->request_parts['distinct'] = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
 			$fields   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
-			$limits   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
+			$this->request_parts['limits']   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
 		}
 
 	}
@@ -3127,7 +3124,7 @@ class WP_Query {
 
 	}
 
-	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$limits, &$fields) {
+	public function apply_post_paging_filters(&$where, &$groupby, &$join, &$orderby, &$fields) {
 
 		/*
 		 * Apply post-paging filters on where and join. Only plugins that
@@ -3199,7 +3196,7 @@ class WP_Query {
 		 * @param string   $limits The LIMIT clause of the query.
 		 * @param WP_Query $this   The WP_Query instance (passed by reference).
 		 */
-		$limits = apply_filters_ref_array( 'post_limits', array( $limits, &$this ) );
+		$limits = apply_filters_ref_array( 'post_limits', array( $this->request_parts['limits'], &$this ) );
 
 		/**
 		 * Filters the SELECT clause of the query.
@@ -3231,7 +3228,7 @@ class WP_Query {
 		$orderby  = isset( $clauses['orderby'] ) ? $clauses['orderby'] : '';
 		$this->request_parts['distinct'] = isset( $clauses['distinct'] ) ? $clauses['distinct'] : '';
 		$fields   = isset( $clauses['fields'] ) ? $clauses['fields'] : '';
-		$limits   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
+		$this->request_parts['limits']   = isset( $clauses['limits'] ) ? $clauses['limits'] : '';
 
 	}
 
