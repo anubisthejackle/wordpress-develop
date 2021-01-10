@@ -2157,6 +2157,13 @@ class WP_Query {
 
 	}
 
+	/**
+	 * Retrieves an array of posts based on query variables.
+	 *
+	 * @since Unknown
+	 *
+	 * @return WP_Post[]|int[] Array of post objects or post IDs.
+	 */
 	public function get_posts_from_query(){
 		if ( 'ids' === $this->query_vars['fields'] ) {
 			return $this->get_posts_ids();
@@ -2180,6 +2187,13 @@ class WP_Query {
 		return $this->posts;
 	}
 
+	/**
+	 * Builds the database query to be used by the get_posts method
+	 *
+	 * @since Unknown
+	 *
+	 * @global wpdb $wpdb WordPress database abstraction object.
+	 */
 	public function build_request_for_get_posts() {
 		global $wpdb;
 
@@ -2199,6 +2213,17 @@ class WP_Query {
 		}
 	}
 
+	/**
+	 * Determines whether or not the query should be split.
+	 *
+	 * Includes the split_the_query filter to allow overwriding of default choice.
+	 *
+	 * @since Unknown
+	 *
+	 * @global wpdb $wpdb WordPress database abstraction object.
+	 *
+	 * @return bool True if the query should be split
+	 */
 	public function should_split_the_query(){
 		global $wpdb;
 
